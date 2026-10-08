@@ -2,6 +2,7 @@ const express = require("express");
 const path = require("node:path");
 const db = require("./database");
 const uploadRouter = require("./upload");
+const leituraRouter = require("./leitura");
 
 const app = express();
 const PORT = 3000;
@@ -58,6 +59,7 @@ app.get("/api/documentos", (req, res) => {
 });
 
 app.use("/api/documentos/upload", uploadRouter);
+app.use("/api/documentos", leituraRouter);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Sistema disponível em http://localhost:${PORT}`);

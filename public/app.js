@@ -22,14 +22,30 @@ async function carregarDocumentos() {
   }
 
   for (const documento of dados) {
-    const item = document.createElement("li");
+  const item = document.createElement("li");
+  const descricao = document.createElement("span");
 
-    item.textContent =
-      `#${documento.id} — ${documento.nome_arquivo} ` +
-      `— Status: ${documento.status}`;
+  descricao.textContent =
+    `#${documento.id} — ${documento.nome_arquivo} ` +
+    `— Status: ${documento.status} `;
 
-    lista.appendChild(item);
-  }
+  const botaoLer = document.createElement("button");
+  botaoLer.type = "button";
+  botaoLer.textContent = "Ler texto";
+  botaoLer.addEventListener("click", () => {
+    abrirTexto(documento.id, true, botaoLer);
+  });
+
+  const botaoConsultar = document.createElement("button");
+  botaoConsultar.type = "button";
+  botaoConsultar.textContent = "Ver texto salvo";
+  botaoConsultar.addEventListener("click", () => {
+    abrirTexto(documento.id, false, botaoConsultar);
+  });
+
+  item.append(descricao, botaoLer, " ", botaoConsultar);
+  lista.appendChild(item);
+}
 }
 
 formulario.addEventListener("submit", async (evento) => {
@@ -85,3 +101,44 @@ document.querySelector("#atualizar").addEventListener("click", () => {
 carregarDocumentos().catch((erro) => {
   mensagem.textContent = erro.message;
 });
+
+async function abrirTexto(id, extrair, botao) {
+  const titulo = document.querySelector("#titulo-texto");
+  const areaTexto = document.querySelector("#texto-documento");
+
+  botao.disabled = true;
+  titulo.textContent = `Documento #${id}`;
+  areaTexto.textContent = extrair
+    ? "Lendo o PDF..."
+    : "Consultando o texto salvo...";
+
+  try {
+    const url = extrair
+      ? `/api/documentos/${id}/extrair-texto`
+      : `/api/documentos/${id}/texto`;
+
+    const resposta = await fetch(url, {
+      method: extrair ? "POST" : "GET",
+    });
+
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(dados.erro || "Não foi possível ler o texto.");
+    }
+
+    titulo.textContent = `Texto: ${dados.nome_arquivo}`;
+    areaTexto.textContent =
+      dados.texto_extraido ||
+      'Ainda não há texto salvo. Clique em "Ler texto".';
+
+    mensagem.textContent = extrair
+      ? dados.mensagem
+      : "Consulta concluída.";
+  } catch (erro) {
+    areaTexto.textContent = erro.message;
+    mensagem.textContent = erro.message;
+  } finally {
+    botao.disabled = false;
+  }
+}
