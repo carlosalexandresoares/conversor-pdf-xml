@@ -1,12 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor de PDF para XML</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conversor PDF para XML</title>
+  <link rel="stylesheet" href=style/style.css">
 </head>
+
 <body>
-    <h1>Conversor de PDF para XML</h1>
-    <p>Servidor funcionando. Vamos Implementar a importação de notas fiscais.</p>
+  <h1>Conversor PDF para XML</h1>
+
+  <section>
+    <h2>Enviar documento</h2>
+    <p>Selecione um PDF de até 10 MB.</p>
+
+    <form id="form-upload">
+      <input
+        type="file"
+        id="pdf"
+        name="pdf"
+        accept=".pdf,application/pdf"
+        required
+      >
+      <button type="submit" id="enviar">Enviar PDF</button>
+    </form>
+
+    <p id="mensagem" role="status"></p>
+  </section>
+
+  <section>
+    <h2>Últimos documentos</h2>
+    <button type="button" id="atualizar">Atualizar lista</button>
+    <ul id="documentos"></ul>
+  </section>
+
+  <script src="/app.js"></script>
 </body>
 </html>
