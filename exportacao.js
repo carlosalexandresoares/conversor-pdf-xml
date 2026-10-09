@@ -6,6 +6,7 @@ const router = express.Router();
 
 function escapar(valor) {
   return String(valor)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -19,7 +20,8 @@ function tag(nome, valor) {
 }
 
 function dinheiro(valor) {
-  return valor == null ? null : (valor / 100).toFixed(2);
+  if (valor == null || String(valor).trim() === "") return null;
+  return Number.isSafeInteger(Number(valor)) ? (Number(valor) / 100).toFixed(2) : null;
 }
 
 function endereco(dados, pessoa) {
@@ -52,63 +54,10 @@ function identificacaoPrestador(dados) {
   ${tag("InscricaoMunicipal", dados.prestador_inscricao_municipal)}`;
 }
 
-function verificar(dados) {
-  const faltantes = [];
-
-  const obrigatoriosDoTeste = [
-    "numero_nota",
-    "codigo_verificacao",
-    "data_emissao",
-    "competencia_xml",
-    "cnpj_prestador",
-    "nome_prestador",
-    "prestador_inscricao_municipal",
-    "prestador_endereco",
-    "prestador_numero",
-    "prestador_codigo_municipio",
-    "prestador_uf",
-    "prestador_cep",
-    "cnpj_tomador",
-    "nome_tomador",
-    "tomador_endereco",
-    "tomador_numero",
-    "tomador_codigo_municipio",
-    "tomador_uf",
-    "tomador_cep",
-    "valor_servicos_centavos",
-    "valor_liquido_centavos",
-    "base_calculo_centavos",
-    "aliquota_percentual",
-    "valor_iss_centavos",
-    "item_lista_servico_xml",
-    "revisado_em",
-  ];
-
-  for (const campo of obrigatoriosDoTeste) {
-    if (dados[campo] == null || dados[campo] === "") {
-      faltantes.push(campo);
-    }
-  }
-
-  if (!["sim", "nao"].includes(dados.iss_retido)) {
-    faltantes.push("iss_retido");
-  }
-
-  if (!["1", "2"].includes(dados.incentivo_fiscal_xml)) {
-    faltantes.push("incentivo_fiscal_xml");
-  }
-
-  if (dados.rps_numero) {
-    for (const campo of ["rps_serie", "rps_data"]) {
-      if (!dados[campo]) faltantes.push(campo);
-    }
-  }
-
-  return faltantes;
-}
-
 function gerarXml(dados) {
-  const aliquota = Number(dados.aliquota_percentual).toFixed(4);
+  const valorAliquota = dados.aliquota_percentual;
+  const aliquota = valorAliquota == null || String(valorAliquota).trim() === ""
+    ? null : (Number.isFinite(Number(valorAliquota)) ? Number(valorAliquota).toFixed(4) : null);
 
   const rps = dados.rps_numero
     ? `<Rps>
@@ -118,7 +67,7 @@ function gerarXml(dados) {
           ${tag("Tipo", dados.rps_tipo)}
         </IdentificacaoRps>
         ${tag("DataEmissao", dados.rps_data)}
-        <Status>1</Status>
+        ${tag("Status", dados.rps_status)}
       </Rps>`
     : "";
 
@@ -167,8 +116,8 @@ function gerarXml(dados) {
           ${tag("Competencia", dados.competencia_xml)}
           <Servico>
             <Valores>${valoresServico}</Valores>
-            ${tag("IssRetido", dados.iss_retido === "sim" ? "1" : "2")}
-            ${tag("ItemListaServico", dados.item_lista_servico_xml)}
+            ${tag("IssRetido", dados.iss_retido === "sim" ? "1" : dados.iss_retido === "nao" ? "2" : null)}
+            ${tag("ItemListaServico", dados.item_lista_servico_xml || dados.item_lista_servico)}
             ${tag("Discriminacao", discriminacao)}
           </Servico>
           <Prestador>
@@ -207,25 +156,13 @@ router.get("/:id/xml-teste", (req, res) => {
       return res.status(404).json({ erro: "Documento não encontrado." });
     }
 
-    const dados = JSON.parse(documento.dados_json);
+    const dados = JSON.parse(documento.dados_json || "{}") || {};
     preencherCodigosMunicipios(dados);
-
-    const faltantes = verificar(dados);
-
-    if (!dados.descricao_servico && !dados.discriminacao_servicos) {
-      faltantes.push("descricao_servico");
-    }
-
-    if (faltantes.length) {
-      return res.status(422).json({
-        erro: `Complete e confira estes campos: ${faltantes.join(", ")}.`,
-      });
-    }
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="documento-${id}-abrasf-teste.xml"`
+      `attachment; filename="documento-${id}-abrasf.xml"`
     );
 
     res.send(gerarXml(dados));

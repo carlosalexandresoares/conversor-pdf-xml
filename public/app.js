@@ -4,310 +4,125 @@ const botaoEnviar = document.querySelector("#enviar");
 const mensagem = document.querySelector("#mensagem");
 const lista = document.querySelector("#documentos");
 
+async function lerResposta(resposta) {
+  const texto = await resposta.text();
+  let dados;
+  try { dados = JSON.parse(texto); }
+  catch { throw new Error(`O servidor retornou uma resposta inesperada (HTTP ${resposta.status}).`); }
+  if (!resposta.ok) throw new Error(dados.erro || `Falha na operação (HTTP ${resposta.status}).`);
+  return dados;
+}
+
+const processamentos = new Map();
+function prepararDocumento(id, novo = false) {
+  if (processamentos.has(id)) return processamentos.get(id);
+  const tarefa = (async () => {
+    let temModelo = false;
+    if (!novo) {
+      const resposta = await fetch(`/api/documentos/${id}/revisao`);
+      if (resposta.ok) {
+        const revisao = await lerResposta(resposta);
+        // Nunca reidentifica os campos de um documento já revisado.
+        if (revisao.dados.revisado_em) return;
+        temModelo = Boolean(revisao.dados.modelo);
+      } else if (resposta.status !== 400) {
+        await lerResposta(resposta);
+      }
+    }
+    const etapas = temModelo ? ["complementos"] : [
+      "extrair-texto", "identificar-campos", "complementos"
+    ];
+    for (const etapa of etapas) {
+      mensagem.textContent = `Processando documento #${id}...`;
+      await lerResposta(await fetch(`/api/documentos/${id}/${etapa}`, { method: "POST" }));
+    }
+  })();
+  processamentos.set(id, tarefa);
+  tarefa.finally(() => processamentos.delete(id)).catch(() => {});
+  return tarefa;
+}
+
+async function baixarXml(id) {
+  let aviso = "";
+  try { await prepararDocumento(id); }
+  catch (erro) { aviso = ` Extração não concluída: ${erro.message}`; }
+  const resposta = await fetch(`/api/documentos/${id}/xml-teste`);
+  if (!resposta.ok) await lerResposta(resposta);
+  const url = URL.createObjectURL(await resposta.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `documento-${id}-abrasf.xml`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  mensagem.textContent = "XML baixado com os dados disponíveis. Campos ausentes foram omitidos." + aviso;
+}
+
 async function carregarDocumentos() {
-  const resposta = await fetch("/api/documentos");
-  const dados = await resposta.json();
-
-  if (!resposta.ok) {
-    throw new Error(dados.erro || "Não foi possível carregar a lista.");
-  }
-
+  const dados = await lerResposta(await fetch("/api/documentos"));
   lista.replaceChildren();
-
-  if (dados.length === 0) {
+  if (!dados.length) {
     const item = document.createElement("li");
     item.textContent = "Nenhum documento cadastrado.";
     lista.appendChild(item);
     return;
   }
-
   for (const documento of dados) {
     const item = document.createElement("li");
     const descricao = document.createElement("span");
-
-    descricao.textContent =
-      `#${documento.id} — ${documento.nome_arquivo} ` +
-      `— Status: ${documento.status} `;
-
-    const botaoLer = document.createElement("button");
-    botaoLer.type = "button";
-    botaoLer.textContent = "Ler texto";
-    botaoLer.addEventListener("click", () => {
-      abrirTexto(documento.id, true, botaoLer);
-    });
-
-    const botaoConsultar = document.createElement("button");
-    botaoConsultar.type = "button";
-    botaoConsultar.textContent = "Ver texto salvo";
-    botaoConsultar.addEventListener("click", () => {
-      abrirTexto(documento.id, false, botaoConsultar);
-    });
-
-    item.append(descricao, botaoLer, " ", botaoConsultar);
-
-    const botaoCampos = document.createElement("button");
-    botaoCampos.type = "button";
-    botaoCampos.textContent = "Identificar campos";
-
-    botaoCampos.addEventListener("click", () => {
-      identificarCampos(documento.id, botaoCampos);
-    });
-
-    const botaoRevisar = document.createElement("button");
-    botaoRevisar.type = "button";
-    botaoRevisar.textContent = "Revisar dados";
-    botaoRevisar.addEventListener("click", () => {
-      abrirRevisao(documento.id);
-    });
-
-    item.append(" ", botaoRevisar);
-
-    item.append(" ", botaoCampos);
-
-    const botaoComplementos = document.createElement("button");
-    botaoComplementos.type = "button";
-    botaoComplementos.textContent = "Incluir complementos";
-
-    botaoComplementos.addEventListener("click", async () => {
-      botaoComplementos.disabled = true;
-
-      try {
-        const resposta = await fetch(
-          `/api/documentos/${documento.id}/complementos`,
-          { method: "POST" }
-        );
-
-        const resultado = await resposta.json();
-
-        if (!resposta.ok) {
-          throw new Error(resultado.erro || "Erro ao incluir complementos.");
-        }
-
-        mensagem.textContent = resultado.mensagem;
-      } catch (erro) {
-        mensagem.textContent = erro.message;
-      } finally {
-        botaoComplementos.disabled = false;
-      }
-    });
-
-    item.append(" ", botaoComplementos);
-
-    const botaoPendencias = document.createElement("button");
-botaoPendencias.type = "button";
-botaoPendencias.textContent = "Verificar pendências";
-
-botaoPendencias.addEventListener("click", async () => {
-  botaoPendencias.disabled = true;
-
-  try {
-    const resposta = await fetch(
-      `/api/documentos/${documento.id}/pendencias`
-    );
-
-    const resultado = await resposta.json();
-
-    if (!resposta.ok) {
-      throw new Error(resultado.erro || "Erro ao verificar pendências.");
+    descricao.textContent = `#${documento.id} — ${documento.nome_arquivo} — Status: ${documento.status} `;
+    const revisar = document.createElement("button");
+    revisar.type = "button";
+    revisar.textContent = "Revisar dados";
+    const baixar = document.createElement("button");
+    baixar.type = "button";
+    baixar.textContent = "Baixar XML";
+    async function executar(acao) {
+      revisar.disabled = baixar.disabled = true;
+      try { await acao(); }
+      catch (erro) { mensagem.textContent = erro.message; }
+      finally { revisar.disabled = baixar.disabled = false; }
     }
-
-    document.querySelector("#titulo-texto").textContent =
-      `Pendências: ${resultado.nome_arquivo}`;
-
-    const linhas = [
-      "PENDÊNCIAS",
-      ...(resultado.pendencias.length
-        ? resultado.pendencias.map((item) => `• ${item}`)
-        : ["Nenhuma ausência encontrada nesta verificação inicial."]),
-      "",
-      "AVISOS PARA CONFERÊNCIA",
-      ...(resultado.avisos.length
-        ? resultado.avisos.map((item) => `• ${item}`)
-        : ["Nenhum aviso."]),
-    ];
-
-    document.querySelector("#texto-documento").textContent =
-      linhas.join("\n");
-
-    mensagem.textContent =
-      "Verificação concluída. O documento ainda não foi liberado para exportação.";
-  } catch (erro) {
-    mensagem.textContent = erro.message;
-  } finally {
-    botaoPendencias.disabled = false;
-  }
-});
-
-item.append(" ", botaoPendencias);
-
-const botaoXml = document.createElement("button");
-botaoXml.type = "button";
-botaoXml.textContent = "Baixar XML de teste";
-
-botaoXml.addEventListener("click", async () => {
-  botaoXml.disabled = true;
-
-  try {
-    const resposta = await fetch(
-      `/api/documentos/${documento.id}/xml-teste`
-    );
-
-    if (!resposta.ok) {
-      const erro = await resposta.json();
-      throw new Error(erro.erro || "Erro ao gerar XML.");
-    }
-
-    const arquivo = await resposta.blob();
-    const url = URL.createObjectURL(arquivo);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `documento-${documento.id}-abrasf-teste.xml`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    mensagem.textContent =
-      "XML de teste gerado. A importação no G5 ainda precisa ser validada.";
-  } catch (erro) {
-    mensagem.textContent = erro.message;
-  } finally {
-    botaoXml.disabled = false;
-  }
-});
-
-item.append(" ", botaoXml);
-
+    revisar.addEventListener("click", () => executar(async () => {
+      let aviso = "";
+      try { await prepararDocumento(documento.id); }
+      catch (erro) { aviso = ` Extração não concluída: ${erro.message}`; }
+      await abrirRevisao(documento.id);
+      mensagem.textContent += aviso;
+    }));
+    baixar.addEventListener("click", () => executar(() => baixarXml(documento.id)));
+    item.append(descricao, revisar, " ", baixar);
     lista.appendChild(item);
   }
 }
 
 formulario.addEventListener("submit", async (evento) => {
   evento.preventDefault();
-
   const arquivo = campoPdf.files[0];
   if (!arquivo) return;
-
   if (arquivo.size > 10 * 1024 * 1024) {
     mensagem.textContent = "O PDF deve ter no máximo 10 MB.";
     return;
   }
-
   botaoEnviar.disabled = true;
-  mensagem.textContent = "Enviando...";
-
+  mensagem.textContent = "Enviando e processando PDF...";
   try {
-    const formularioDados = new FormData();
-    formularioDados.append("pdf", arquivo);
-
-    const resposta = await fetch("/api/documentos/upload", {
-      method: "POST",
-      body: formularioDados,
-    });
-
-    const dados = await resposta.json();
-
-    if (!resposta.ok) {
-      throw new Error(dados.erro || "Erro ao enviar o PDF.");
-    }
-
-    mensagem.textContent = dados.mensagem;
+    const envio = new FormData();
+    envio.append("pdf", arquivo);
+    const dados = await lerResposta(await fetch("/api/documentos/upload", { method: "POST", body: envio }));
     formulario.reset();
-
     try {
-      await carregarDocumentos();
-    } catch {
-      mensagem.textContent += " Não foi possível atualizar a lista.";
+      await prepararDocumento(dados.id, true);
+      mensagem.textContent = "PDF salvo e processado. Você pode revisar os dados ou baixar o XML.";
+    } catch (erro) {
+      mensagem.textContent = `PDF salvo, mas a extração não foi concluída: ${erro.message} O XML pode ser baixado com os dados disponíveis.`;
     }
-  } catch (erro) {
-    mensagem.textContent = erro.message;
-  } finally {
-    botaoEnviar.disabled = false;
-  }
+    try { await carregarDocumentos(); }
+    catch (erro) { mensagem.textContent += ` ${erro.message}`; }
+  } catch (erro) { mensagem.textContent = erro.message; }
+  finally { botaoEnviar.disabled = false; }
 });
-
-document.querySelector("#atualizar").addEventListener("click", () => {
-  carregarDocumentos().catch((erro) => {
-    mensagem.textContent = erro.message;
-  });
-});
-
-carregarDocumentos().catch((erro) => {
-  mensagem.textContent = erro.message;
-});
-
-async function abrirTexto(id, extrair, botao) {
-  const titulo = document.querySelector("#titulo-texto");
-  const areaTexto = document.querySelector("#texto-documento");
-
-  botao.disabled = true;
-  titulo.textContent = `Documento #${id}`;
-  areaTexto.textContent = extrair
-    ? "Lendo o PDF..."
-    : "Consultando o texto salvo...";
-
-  try {
-    const url = extrair
-      ? `/api/documentos/${id}/extrair-texto`
-      : `/api/documentos/${id}/texto`;
-
-    const resposta = await fetch(url, {
-      method: extrair ? "POST" : "GET",
-    });
-
-    const dados = await resposta.json();
-
-    if (!resposta.ok) {
-      throw new Error(dados.erro || "Não foi possível ler o texto.");
-    }
-
-    titulo.textContent = `Texto: ${dados.nome_arquivo}`;
-    areaTexto.textContent =
-      dados.texto_extraido ||
-      'Ainda não há texto salvo. Clique em "Ler texto".';
-
-    mensagem.textContent = extrair
-      ? dados.mensagem
-      : "Consulta concluída.";
-  } catch (erro) {
-    areaTexto.textContent = erro.message;
-    mensagem.textContent = erro.message;
-  } finally {
-    botao.disabled = false;
-  }
-}
-
-async function identificarCampos(id, botao) {
-  botao.disabled = true;
-  mensagem.textContent = "Identificando os campos...";
-
-  try {
-    const resposta = await fetch(
-      `/api/documentos/${id}/identificar-campos`,
-      { method: "POST" }
-    );
-
-    const resultado = await resposta.json();
-
-    if (!resposta.ok) {
-      throw new Error(resultado.erro || "Falha ao identificar campos.");
-    }
-
-    document.querySelector("#titulo-texto").textContent =
-      `Campos identificados — Documento #${id}`;
-
-    document.querySelector("#texto-documento").textContent =
-      JSON.stringify(resultado.dados, null, 2);
-
-    mensagem.textContent = resultado.mensagem;
-  } catch (erro) {
-    mensagem.textContent = erro.message;
-  } finally {
-    botao.disabled = false;
-  }
-}
 
 let documentoEmRevisao = null;
 
@@ -409,7 +224,7 @@ async function abrirRevisao(id) {
 
   try {
     const resposta = await fetch(`/api/documentos/${id}/revisao`);
-    const resultado = await resposta.json();
+    const resultado = await lerResposta(resposta);
 
     if (!resposta.ok) {
       throw new Error(resultado.erro || "Erro ao abrir revisão.");
@@ -507,7 +322,7 @@ document.querySelector("#form-revisao").addEventListener(
         }
       );
 
-      const resultado = await resposta.json();
+      const resultado = await lerResposta(resposta);
 
       if (!resposta.ok) {
         throw new Error(resultado.erro || "Erro ao salvar revisão.");
@@ -528,3 +343,5 @@ document.querySelector("#form-revisao").addEventListener(
     }
   }
 );
+
+carregarDocumentos().catch((erro) => { mensagem.textContent = erro.message; });
