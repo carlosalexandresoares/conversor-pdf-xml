@@ -12,17 +12,27 @@ router.post("/:id/identificar-campos", (req, res) => {
   }
 
   try {
-    const documento = db.prepare(`
-      SELECT id, texto_extraido, status
-      FROM documentos
-      WHERE id = ?
-    `).get(id);
+   const documento = db.prepare(`
+  SELECT id, texto_extraido, status, dados_json
+  FROM documentos
+  WHERE id = ?
+`).get(id);
 
-    if (!documento) {
-      return res.status(404).json({
-        erro: "Documento não encontrado.",
-      });
-    }
+if (!documento) {
+  return res.status(404).json({
+    erro: "Documento não encontrado.",
+  });
+}
+
+const dadosAtuais = JSON.parse(documento.dados_json);
+
+if (dadosAtuais.revisado_em) {
+  return res.status(409).json({
+    erro:
+      "Este documento possui uma revisão salva. " +
+      'Use "Revisar dados" para consultar ou corrigir os campos.',
+  });
+}
 
     if (documento.status === "conferido") {
       return res.status(409).json({

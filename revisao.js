@@ -215,6 +215,7 @@ router.put("/:id/revisao", (req, res) => {
       "valor_servicos_centavos",
     ].filter((campo) => dados[campo] == null);
 
+    dados.revisado_em = new Date().toISOString();
     const novoJson = JSON.stringify(dados);
 
     const resultado = db.prepare(`
