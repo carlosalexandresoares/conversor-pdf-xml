@@ -46,6 +46,9 @@ const camposTexto = [
   "uf_prestacao",
   "municipio_incidencia",
   "uf_incidencia",
+  "competencia_xml",
+"item_lista_servico_xml",
+"incentivo_fiscal_xml",
 ];
 
 const camposDinheiro = [
@@ -293,6 +296,33 @@ router.put("/:id/revisao", (req, res) => {
           }
         }
       }
+
+      if (dados.competencia_xml) {
+  const data = dados.competencia_xml;
+  const instante = new Date(`${data}T00:00:00Z`);
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(data) ||
+    Number.isNaN(instante.getTime()) ||
+    instante.toISOString().slice(0, 10) !== data
+  ) {
+    throw new Error("Competência do XML: informe uma data válida AAAA-MM-DD.");
+  }
+
+  if (
+    dados.competencia &&
+    data.slice(0, 7) !== dados.competencia
+  ) {
+    throw new Error("A competência do XML difere do mês/ano informado.");
+  }
+}
+
+if (
+  dados.incentivo_fiscal_xml &&
+  !["1", "2"].includes(dados.incentivo_fiscal_xml)
+) {
+  throw new Error("Incentivo fiscal do XML: informe o código confirmado 1 ou 2.");
+}
 
       for (const campo of camposDinheiro) {
         dados[campo] = converterDinheiro(entrada[campo], campo);

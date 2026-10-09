@@ -7,6 +7,7 @@ const camposRouter = require("./campos");
 const revisaoRouter = require("./revisao");
 const complementosRouter = require("./complementos");
 const pendenciasRouter = require("./pendencias");
+const exportacaoRouter = require("./exportacao");
 
 
 const app = express();
@@ -69,6 +70,8 @@ app.use("/api/documentos", camposRouter);
 app.use("/api/documentos", revisaoRouter);
 app.use("/api/documentos", complementosRouter);
 app.use("/api/documentos", pendenciasRouter);
+app.use("/api/documentos", exportacaoRouter);
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Sistema disponível em http://localhost:${PORT}`);
   console.log("Banco SQLite conectado.");

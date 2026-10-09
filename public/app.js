@@ -140,6 +140,46 @@ botaoPendencias.addEventListener("click", async () => {
 
 item.append(" ", botaoPendencias);
 
+const botaoXml = document.createElement("button");
+botaoXml.type = "button";
+botaoXml.textContent = "Baixar XML de teste";
+
+botaoXml.addEventListener("click", async () => {
+  botaoXml.disabled = true;
+
+  try {
+    const resposta = await fetch(
+      `/api/documentos/${documento.id}/xml-teste`
+    );
+
+    if (!resposta.ok) {
+      const erro = await resposta.json();
+      throw new Error(erro.erro || "Erro ao gerar XML.");
+    }
+
+    const arquivo = await resposta.blob();
+    const url = URL.createObjectURL(arquivo);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `documento-${documento.id}-abrasf-teste.xml`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    mensagem.textContent =
+      "XML de teste gerado. A importação no G5 ainda precisa ser validada.";
+  } catch (erro) {
+    mensagem.textContent = erro.message;
+  } finally {
+    botaoXml.disabled = false;
+  }
+});
+
+item.append(" ", botaoXml);
+
     lista.appendChild(item);
   }
 }
@@ -301,6 +341,12 @@ const definicoesRevisao = [
   ["descricao_servico", "Descrição do serviço"],
   ["discriminacao_servicos", "Discriminação e informações relevantes"],
 ];
+
+definicoesRevisao.push(
+  ["competencia_xml", "Competência para XML — AAAA-MM-DD"],
+  ["item_lista_servico_xml", "Código confirmado para ItemListaServico do XML"],
+  ["incentivo_fiscal_xml", "Incentivo fiscal — código XML confirmado (1 ou 2)"]
+);
 
 definicoesRevisao.push(
   ["codigo_municipio_prestacao", "Prestação — Código IBGE"],
