@@ -250,6 +250,30 @@ const definicoesRevisao = [
   ["descricao_servico", "Descrição do serviço"],
   ["discriminacao_servicos", "Discriminação e informações relevantes"],
 ];
+const camposEndereco = [
+  ["endereco", "Endereço"],
+  ["numero", "Número"],
+  ["complemento", "Complemento"],
+  ["bairro", "Bairro"],
+  ["cep", "CEP"],
+  ["municipio", "Município"],
+  ["uf", "UF"],
+  ["inscricao_municipal", "Inscrição municipal"],
+  ["email", "E-mail"],
+  ["telefone", "Telefone"],
+];
+
+for (const [pessoa, titulo] of [
+  ["prestador", "Prestador"],
+  ["tomador", "Tomador"],
+]) {
+  for (const [campo, rotulo] of camposEndereco) {
+    definicoesRevisao.push([
+      `${pessoa}_${campo}`,
+      `${titulo} — ${rotulo}`,
+    ]);
+  }
+}
 
 async function abrirRevisao(id) {
   const secao = document.querySelector("#secao-revisao");

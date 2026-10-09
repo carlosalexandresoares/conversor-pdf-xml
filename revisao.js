@@ -20,6 +20,26 @@ const camposTexto = [
   "item_lista_servico",
   "descricao_servico",
   "discriminacao_servicos",
+  "prestador_endereco",
+  "prestador_numero",
+  "prestador_complemento",
+  "prestador_bairro",
+  "prestador_cep",
+  "prestador_municipio",
+  "prestador_uf",
+  "prestador_inscricao_municipal",
+  "prestador_email",
+  "prestador_telefone",
+  "tomador_endereco",
+  "tomador_numero",
+  "tomador_complemento",
+  "tomador_bairro",
+  "tomador_cep",
+  "tomador_municipio",
+  "tomador_uf",
+  "tomador_inscricao_municipal",
+  "tomador_email",
+  "tomador_telefone",
 ];
 
 const camposDinheiro = [
@@ -147,7 +167,7 @@ router.put("/:id/revisao", (req, res) => {
           "descricao_servico",
           "discriminacao_servicos",
         ].includes(campo) ? 10000 : 300;
-        
+
         if (valor.length > limite) {
           throw new Error(`Campo muito longo: ${campo}.`);
         }
