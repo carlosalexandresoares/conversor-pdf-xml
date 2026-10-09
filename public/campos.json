@@ -1,0 +1,250 @@
+[
+  [
+    "numero_nota",
+    "Número da nota"
+  ],
+  [
+    "codigo_verificacao",
+    "Código de verificação"
+  ],
+  [
+    "data_emissao",
+    "Emissão — AAAA-MM-DD ou data e hora"
+  ],
+  [
+    "competencia",
+    "Competência — AAAA-MM"
+  ],
+  [
+    "cnpj_prestador",
+    "CPF/CNPJ do prestador"
+  ],
+  [
+    "nome_prestador",
+    "Nome do prestador"
+  ],
+  [
+    "cnpj_tomador",
+    "CPF/CNPJ do tomador"
+  ],
+  [
+    "nome_tomador",
+    "Nome do tomador"
+  ],
+  [
+    "valor_servicos_centavos",
+    "Valor dos serviços (R$)"
+  ],
+  [
+    "valor_liquido_centavos",
+    "Valor líquido (R$)"
+  ],
+  [
+    "valor_total_nota_centavos",
+    "Valor total da nota (R$)"
+  ],
+  [
+    "aliquota_percentual",
+    "Alíquota (%)"
+  ],
+  [
+    "valor_iss_centavos",
+    "ISS (R$)"
+  ],
+  [
+    "valor_ibs_centavos",
+    "IBS (R$)"
+  ],
+  [
+    "valor_cbs_centavos",
+    "CBS (R$)"
+  ],
+  [
+    "rps_numero",
+    "Número do RPS"
+  ],
+  [
+    "rps_serie",
+    "Série do RPS"
+  ],
+  [
+    "rps_tipo",
+    "Tipo do RPS"
+  ],
+  [
+    "rps_data",
+    "Data do RPS — AAAA-MM-DD"
+  ],
+  [
+    "codigo_servico_municipal",
+    "Código municipal do serviço"
+  ],
+  [
+    "item_lista_servico",
+    "Item da lista de serviços"
+  ],
+  [
+    "descricao_servico",
+    "Descrição do serviço"
+  ],
+  [
+    "discriminacao_servicos",
+    "Discriminação e informações relevantes"
+  ],
+  [
+    "competencia_xml",
+    "Competência para XML — AAAA-MM-DD"
+  ],
+  [
+    "item_lista_servico_xml",
+    "Item da lista para XML (opcional)"
+  ],
+  [
+    "incentivo_fiscal_xml",
+    "Incentivo fiscal — código XML confirmado (1 ou 2)"
+  ],
+  [
+    "codigo_municipio_prestacao",
+    "Prestação — Código IBGE"
+  ],
+  [
+    "codigo_municipio_incidencia",
+    "Incidência do ISS — Código IBGE"
+  ],
+  [
+    "base_calculo_centavos",
+    "Base de cálculo (R$)"
+  ],
+  [
+    "valor_pis_centavos",
+    "PIS (R$)"
+  ],
+  [
+    "valor_cofins_centavos",
+    "COFINS (R$)"
+  ],
+  [
+    "valor_inss_centavos",
+    "INSS (R$)"
+  ],
+  [
+    "valor_ir_centavos",
+    "IR (R$)"
+  ],
+  [
+    "valor_csll_centavos",
+    "CSLL (R$)"
+  ],
+  [
+    "iss_retido",
+    "ISS retido — sim / nao / vazio"
+  ],
+  [
+    "municipio_prestacao",
+    "Município de prestação"
+  ],
+  [
+    "uf_prestacao",
+    "UF de prestação"
+  ],
+  [
+    "municipio_incidencia",
+    "Município de incidência do ISS"
+  ],
+  [
+    "uf_incidencia",
+    "UF de incidência do ISS"
+  ],
+  [
+    "prestador_codigo_municipio",
+    "Prestador — Código IBGE"
+  ],
+  [
+    "tomador_codigo_municipio",
+    "Tomador — Código IBGE"
+  ],
+  [
+    "prestador_endereco",
+    "Prestador — Endereço"
+  ],
+  [
+    "prestador_numero",
+    "Prestador — Número"
+  ],
+  [
+    "prestador_complemento",
+    "Prestador — Complemento"
+  ],
+  [
+    "prestador_bairro",
+    "Prestador — Bairro"
+  ],
+  [
+    "prestador_cep",
+    "Prestador — CEP"
+  ],
+  [
+    "prestador_municipio",
+    "Prestador — Município"
+  ],
+  [
+    "prestador_uf",
+    "Prestador — UF"
+  ],
+  [
+    "prestador_inscricao_municipal",
+    "Prestador — Inscrição municipal"
+  ],
+  [
+    "prestador_email",
+    "Prestador — E-mail"
+  ],
+  [
+    "prestador_telefone",
+    "Prestador — Telefone"
+  ],
+  [
+    "tomador_endereco",
+    "Tomador — Endereço"
+  ],
+  [
+    "tomador_numero",
+    "Tomador — Número"
+  ],
+  [
+    "tomador_complemento",
+    "Tomador — Complemento"
+  ],
+  [
+    "tomador_bairro",
+    "Tomador — Bairro"
+  ],
+  [
+    "tomador_cep",
+    "Tomador — CEP"
+  ],
+  [
+    "tomador_municipio",
+    "Tomador — Município"
+  ],
+  [
+    "tomador_uf",
+    "Tomador — UF"
+  ],
+  [
+    "tomador_inscricao_municipal",
+    "Tomador — Inscrição municipal"
+  ],
+  [
+    "tomador_email",
+    "Tomador — E-mail"
+  ],
+  [
+    "tomador_telefone",
+    "Tomador — Telefone"
+  ],
+  [
+    "rps_status",
+    "Status do RPS — 1 normal / 2 cancelado"
+  ]
+]

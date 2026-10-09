@@ -4,45 +4,148 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Conversor PDF para XML</title>
-  <link rel="stylesheet" href="./style/style.css">
+  <meta name="theme-color" content="#152c40">
+  <title>Folha • PDF para XML</title>
+  <link rel="stylesheet" href="/style/style.css">
 </head>
 
 <body>
-  <h1>Conversor PDF para XML</h1>
-
-  <section>
-    <h2>Enviar documento</h2>
-    <p>Selecione um PDF de até 10 MB.</p>
-
-    <form id="form-upload">
-      <input type="file" id="pdf" name="pdf" accept=".pdf,application/pdf" required>
-      <button type="submit" id="enviar">Enviar PDF</button>
-    </form>
-
-    <p id="mensagem" role="status"></p>
-  </section>
-
-  <section>
-    <h2>Últimos documentos</h2>
-    <ul id="documentos"></ul>
-  </section>
-  <section id="secao-revisao" hidden>
-    <h2 id="titulo-revisao">Revisar documento</h2>
-
-    <p>
-      Valores em reais, sem separador de milhares: 5745,84.
-      Deixe vazio quando a informação não estiver disponível.
-    </p>
-
-    <form id="form-revisao">
-      <div id="campos-revisao"></div>
-      <button type="submit" id="salvar-revisao">Salvar revisão</button>
-    </form>
-
-    <p id="mensagem-revisao" role="status"></p>
-  </section>
-  <script src="/app.js"></script>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Folha, início"><span class="brand-icon">f.</span><span>folha<span
+          class="brand-sub">DOCUMENTOS FISCAIS</span></span></a>
+    <div class="workspace-label">SEU ESPAÇO DE TRABALHO</div>
+    <a class="nav-item active" href="#documentos-secao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.7" aria-hidden="true">
+        <path d="M5 3h9l5 5v13H5zM14 3v6h5M8 13h8M8 17h6" />
+      </svg>Documentos <span id="nav-total">0</span></a>
+    <div class="side-note"><span class="dot"></span> Armazenamento local<p>Seus PDFs e revisões ficam neste servidor.
+      </p>
+    </div>
+    <div class="sidebar-footer">PDF → XML<span>VERSÃO 2.0</span></div>
+  </aside>
+  <div class="app-shell">
+    <header class="topbar"><span>Área de trabalho <span class="crumb">/</span> <strong>Documentos</strong></span><span
+        id="conexao" class="connection" role="status">Conectando…</span></header>
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">MENOS DIGITAÇÃO. MAIS CONTROLE.</div>
+          <h1>Seus documentos,<br class="mobile-break"> organizados.</h1>
+          <p>Importe PDFs, confira os dados e exporte seus XMLs em um só lugar.</p>
+        </div><span class="format-badge">PDF <span>→</span> XML</span>
+      </div>
+      <div class="metrics" aria-label="Resumo dos documentos">
+        <div class="metric"><span>Documentos</span><strong id="total">0</strong><small>na sua biblioteca</small></div>
+        <div class="metric"><span>Em processamento</span><strong id="em-fila">0</strong><small>leitura
+            automática</small></div>
+        <div class="metric"><span>Para revisar</span><strong id="a-revisar">0</strong><small>aguardando
+            conferência</small></div>
+        <div class="metric"><span>Revisões salvas</span><strong id="revisados">0</strong><small>dados conferidos por
+            você</small></div>
+      </div>
+      <section class="upload-card" aria-labelledby="upload-titulo">
+        <div class="section-kicker">01 <span>IMPORTAR</span></div>
+        <form id="form-upload">
+          <label class="dropzone" id="dropzone" for="pdf">
+            <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="1.6">
+                <path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5" />
+              </svg></span>
+            <span class="drop-copy"><strong id="upload-titulo">Arraste seus PDFs para cá</strong><span>ou clique para
+                escolher arquivos no computador</span><small>Até 50 arquivos por lote • 20 MB por PDF • OCR local para
+                digitalizações</small></span>
+            <span class="choose-file">Selecionar PDFs <span aria-hidden="true">↗</span></span>
+          </label>
+          <input type="file" id="pdf" accept=".pdf,application/pdf" multiple class="sr-only">
+          <div class="upload-actions" id="upload-actions" hidden><span id="arquivos-escolhidos"></span><button
+              type="submit" id="enviar" class="btn primary">Importar arquivos</button></div>
+        </form>
+        <ol id="fila-envio" class="upload-results" aria-live="polite"></ol>
+      </section>
+      <p id="mensagem" class="notice" role="status" hidden></p>
+      <section class="documents-card" id="documentos-secao" aria-labelledby="documentos-titulo">
+        <div class="documents-header">
+          <div>
+            <div class="section-kicker">02 <span>BIBLIOTECA</span></div>
+            <h2 id="documentos-titulo">Documentos</h2>
+          </div>
+          <div class="document-actions"><button id="revisar-selecionado" class="btn secondary" disabled>Revisar
+              dados</button><button id="baixar-selecionado" class="btn primary" disabled>Baixar XML</button></div>
+        </div>
+        <div class="filterbar"><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.7" aria-hidden="true">
+              <circle cx="10" cy="10" r="6" />
+              <path d="m15 15 5 5" />
+            </svg><input id="busca" type="search" placeholder="Buscar arquivo, nota ou empresa"
+              aria-label="Buscar documentos"></label><label class="filter-select"><span class="sr-only">Filtrar
+              status</span><select id="filtro">
+              <option value="todos">Todos os status</option>
+              <option value="pendentes">Para revisar</option>
+              <option value="revisados">Revisão salva</option>
+              <option value="fila">Em processamento</option>
+              <option value="erro">Falha na leitura</option>
+            </select></label></div>
+        <div class="selection-line"><span id="selecao-info">Selecione documentos para começar.</span><span>1 PDF por
+            nota fiscal</span></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="check-col"><input id="selecionar-todos" type="checkbox"
+                    aria-label="Selecionar todos os documentos desta página"></th>
+                <th>DOCUMENTO</th>
+                <th>PRESTADOR</th>
+                <th>VALOR DOS SERVIÇOS</th>
+                <th>STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="documentos"></tbody>
+          </table>
+        </div>
+        <div id="vazio" class="empty" hidden><span aria-hidden="true">▤</span>
+          <h3>Nenhum documento por aqui</h3>
+          <p>Importe seus PDFs acima ou ajuste a busca.</p>
+        </div>
+        <footer class="table-footer"><span id="contagem"></span>
+          <div><button class="page-btn" id="anterior" aria-label="Página anterior">←</button><span
+              id="pagina"></span><button class="page-btn" id="proxima" aria-label="Próxima página">→</button></div>
+        </footer>
+      </section>
+      <p class="footnote">O XML usa os dados disponíveis. Informações ausentes são omitidas; a aceitação no sistema
+        fiscal depende da conferência e dos requisitos de importação.</p>
+    </main>
+  </div>
+  <dialog id="revisao-dialog" aria-labelledby="titulo-revisao">
+    <header class="dialog-header">
+      <div><span class="eyebrow">CONFERÊNCIA DO DOCUMENTO</span>
+        <h2 id="titulo-revisao">Revisar dados</h2>
+      </div><button type="button" id="fechar-revisao" class="close-btn" aria-label="Fechar revisão">×</button>
+    </header>
+    <div class="review-layout">
+      <aside class="pdf-pane">
+        <div class="pdf-toolbar"><strong>Documento original</strong><a id="abrir-pdf" target="_blank"
+            rel="noopener">Abrir PDF ↗</a></div><iframe id="preview-pdf" title="PDF original para conferência"></iframe>
+      </aside>
+      <div class="review-pane">
+        <p id="aviso-revisao" class="notice" hidden></p>
+        <div class="review-tabs" role="tablist" aria-label="Conteúdo da revisão"><button type="button" id="tab-campos"
+            role="tab" aria-selected="true" aria-controls="form-revisao">Campos extraídos</button><button type="button"
+            id="tab-texto" role="tab" aria-selected="false" aria-controls="texto-extraido">Texto completo</button></div>
+        <p class="review-help">Deixe vazio o que não estiver no documento. Valores monetários: 5745,84. Campos sugeridos
+          pela leitura automática precisam de conferência.</p>
+        <form id="form-revisao">
+          <div id="campos-revisao"></div>
+          <div class="save-bar">
+            <p id="mensagem-revisao" role="status"></p><button class="btn primary" id="salvar-revisao"
+              type="submit">Salvar revisão</button>
+          </div>
+        </form>
+        <pre id="texto-extraido" hidden></pre>
+        <button type="button" class="text-btn" id="tentar-leitura" hidden>Tentar leitura novamente</button>
+      </div>
+    </div>
+  </dialog>
+  <script src="/app.js" defer></script>
 </body>
 
 </html>

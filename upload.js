@@ -4,17 +4,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const db = require("./database");
+const {enfileirar, pastaUploads} = require("./processamento");
 
 
 const router = express.Router();
 
-const pastaUploads = path.join(__dirname, "uploads");
+
 fs.mkdirSync(pastaUploads, { recursive: true });
 
 const receberPdf = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 20 * 1024 * 1024,
     files: 1,
     fields: 0,
     parts: 1,
@@ -28,7 +29,7 @@ router.post("/", (req, res) => {
 
       return res.status(tamanhoExcedido ? 413 : 400).json({
         erro: tamanhoExcedido
-          ? "O PDF deve ter no máximo 10 MB."
+          ? "O PDF deve ter no máximo 20 MB."
           : "Envie apenas um arquivo no campo PDF.",
       });
     }
@@ -65,8 +66,9 @@ router.post("/", (req, res) => {
       `).get(hash);
 
       if (existente) {
-        return res.status(409).json({
-          erro: `Este arquivo já foi cadastrado como documento ${existente.id}.`,
+        return res.status(200).json({
+          id: existente.id, duplicado: true,
+          mensagem: `Este arquivo já foi cadastrado como documento ${existente.id}.`,
         });
       }
 
@@ -92,8 +94,10 @@ router.post("/", (req, res) => {
         hash
       );
 
+      arquivoGravado = false; // O arquivo já pertence ao registro salvo.
+      enfileirar(Number(resultado.lastInsertRowid));
       return res.status(201).json({
-        mensagem: "PDF salvo. A extração dos dados ainda está pendente.",
+        mensagem: "PDF salvo e adicionado à fila de leitura.",
         id: Number(resultado.lastInsertRowid),
       });
     } catch (erroSalvar) {

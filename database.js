@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 // Garante que a pasta do banco exista, inclusive ao baixar do GitHub.
-const pastaDados = path.join(__dirname, "data");
+const pastaDados = process.env.CONVERSOR_DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(pastaDados, { recursive: true });
 
 const db = new Database(path.join(pastaDados, "conversor.db"));
@@ -52,4 +52,10 @@ db.exec(`
     ON documentos(cnpj_prestador);
 `);
 
+// Additive migration: preserves existing PDFs, records and manual revisions.
+const colunas = new Set(db.prepare("PRAGMA table_info(documentos)").all().map(c => c.name));
+for (const [nome, tipo] of Object.entries({ processamento: "TEXT NOT NULL DEFAULT 'novo'", erro_processamento: "TEXT", processado_em: "TEXT" })) {
+  if (!colunas.has(nome)) db.exec(`ALTER TABLE documentos ADD COLUMN ${nome} ${tipo}`);
+}
+db.pragma("busy_timeout = 5000");
 module.exports = db;

@@ -3,6 +3,7 @@ const db = require("./database");
 const { preencherCodigosMunicipios } = require("./municipios");
 
 const router = express.Router();
+const archiver = require("archiver");
 
 function escapar(valor) {
   return String(valor)
@@ -49,7 +50,7 @@ function contato(dados, pessoa) {
 
 function identificacaoPrestador(dados) {
   return `<CpfCnpj>
-    ${tag("Cnpj", dados.cnpj_prestador)}
+    ${tag(String(dados.cnpj_prestador || "").length === 11 ? "Cpf" : "Cnpj", dados.cnpj_prestador)}
   </CpfCnpj>
   ${tag("InscricaoMunicipal", dados.prestador_inscricao_municipal)}`;
 }
@@ -125,7 +126,7 @@ function gerarXml(dados) {
           </Prestador>
           <Tomador>
             <IdentificacaoTomador>
-              <CpfCnpj>${tag("Cnpj", dados.cnpj_tomador)}</CpfCnpj>
+              <CpfCnpj>${tag(String(dados.cnpj_tomador || "").length === 11 ? "Cpf" : "Cnpj", dados.cnpj_tomador)}</CpfCnpj>
               ${tag("InscricaoMunicipal", dados.tomador_inscricao_municipal)}
             </IdentificacaoTomador>
             ${tag("RazaoSocial", dados.nome_tomador)}
@@ -140,7 +141,7 @@ function gerarXml(dados) {
 </CompNfse>`;
 }
 
-router.get("/:id/xml-teste", (req, res) => {
+router.get(["/:id/xml-teste", "/:id/xml"], (req, res) => {
   const id = Number(req.params.id);
 
   if (!Number.isSafeInteger(id) || id <= 0) {
@@ -172,4 +173,35 @@ router.get("/:id/xml-teste", (req, res) => {
   }
 });
 
+function avisosExportacao(doc,dados) {
+  const avisos=[...(dados.avisos||[])];
+  for(const [campo,nome] of Object.entries({numero_nota:'Número da nota',cnpj_prestador:'CPF/CNPJ do prestador',cnpj_tomador:'CPF/CNPJ do tomador',data_emissao:'Emissão',competencia_xml:'Competência com data completa',incentivo_fiscal_xml:'Incentivo fiscal'})) {
+    if(dados[campo]==null || dados[campo]==='') avisos.push(`${nome}: ausente no XML.`);
+  }
+  if(!dados.revisado_em) avisos.push('Documento sem revisão salva.');
+  if(doc.processamento==='erro') avisos.push(doc.erro_processamento || 'Extração interrompida.');
+  if(['fila','processando'].includes(doc.processamento)) avisos.push('Leitura em andamento no momento da exportação.');
+  if(dados.valor_ibs_centavos!=null || dados.valor_cbs_centavos!=null) avisos.push('IBS/CBS permanecem no banco; não são exportados no perfil ABRASF atual.');
+  return [...new Set(avisos)];
+}
+router.post('/xml-lote', async (req,res,next)=>{
+  const ids=req.body?.ids;
+  if(!Array.isArray(ids)||ids.length<1||ids.length>100||ids.some(id=>!Number.isSafeInteger(id)||id<1)) return res.status(400).json({erro:'Selecione de 1 a 100 documentos válidos.'});
+  try {
+    const registros=[...new Set(ids)].map(id=>db.prepare('SELECT * FROM documentos WHERE id=?').get(id));
+    if(registros.some(d=>!d))return res.status(404).json({erro:'Um dos documentos não existe mais. Atualize a lista.'});
+    const arquivos=registros.map(doc=>{
+      const dados=JSON.parse(doc.dados_json||'{}');preencherCodigosMunicipios(dados);
+      return {nome:`documento-${doc.id}-abrasf.xml`,xml:gerarXml(dados),avisos:avisosExportacao(doc,dados),original:doc.nome_arquivo};
+    });
+    res.type('application/zip');res.setHeader('Content-Disposition','attachment; filename="xml-selecionados.zip"');
+    const zip=archiver('zip',{zlib:{level:6}});
+    zip.on('error',next);res.on('close',()=>{if(!res.writableEnded)zip.abort()});zip.pipe(res);
+    for(const arquivo of arquivos)zip.append(arquivo.xml,{name:arquivo.nome});
+    zip.append('RELATÓRIO DE EXPORTAÇÃO\n\nPerfil baseado no XML ABRASF de referência. Não equivale a uma validação XSD ou à aceitação no G5. Campos ausentes são omitidos.\n\n'+arquivos.map(a=>`${a.original} → ${a.nome}\n${a.avisos.map(v=>'• '+v).join('\n')||'Sem avisos adicionais.'}`).join('\n\n'),{name:'relatorio-exportacao.txt'});
+    await zip.finalize();
+  } catch(erro){next(erro);}
+});
 module.exports = router;
+module.exports.gerarXml = gerarXml;
+module.exports.avisosExportacao = avisosExportacao;

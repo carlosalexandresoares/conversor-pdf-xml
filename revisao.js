@@ -5,6 +5,11 @@ const db = require("./database");
 const router = express.Router();
 
 const camposTexto = [
+  "rps_status",
+  "prestador_codigo_municipio",
+  "tomador_codigo_municipio",
+  "codigo_municipio_prestacao",
+  "codigo_municipio_incidencia",
   "numero_nota",
   "codigo_verificacao",
   "data_emissao",
@@ -106,7 +111,7 @@ router.get("/:id/revisao", (req, res) => {
 
   try {
     const documento = db.prepare(`
-      SELECT id, nome_arquivo, dados_json, status
+      SELECT id, nome_arquivo, dados_json, status, texto_extraido, processamento, erro_processamento
       FROM documentos WHERE id = ?
     `).get(id);
 
@@ -116,16 +121,14 @@ router.get("/:id/revisao", (req, res) => {
 
     const dados = JSON.parse(documento.dados_json);
     preencherCodigosMunicipios(dados);
-    if (!dados.modelo) {
-      return res.status(400).json({
-        erro: 'Clique primeiro em "Identificar campos".',
-      });
-    }
 
     res.json({
       id: documento.id,
       nome_arquivo: documento.nome_arquivo,
       dados,
+      texto_extraido: documento.texto_extraido,
+      processamento: documento.processamento,
+      erro_processamento: documento.erro_processamento,
       versao: documento.dados_json,
     });
   } catch (erro) {
@@ -143,11 +146,15 @@ router.put("/:id/revisao", (req, res) => {
 
   try {
     const documento = db.prepare(`
-      SELECT dados_json, status FROM documentos WHERE id = ?
+      SELECT dados_json, status, processamento FROM documentos WHERE id = ?
     `).get(id);
 
     if (!documento) {
       return res.status(404).json({ erro: "Documento não encontrado." });
+    }
+
+    if (["fila", "processando"].includes(documento.processamento)) {
+      return res.status(409).json({ erro: "Aguarde o processamento terminar antes de salvar." });
     }
 
     if (documento.status === "conferido") {
@@ -172,6 +179,7 @@ router.put("/:id/revisao", (req, res) => {
 
     try {
       for (const campo of camposTexto) {
+        if (!(campo in entrada)) continue;
         if (typeof entrada[campo] !== "string") {
           throw new Error(`Campo inválido: ${campo}.`);
         }
@@ -194,8 +202,8 @@ router.put("/:id/revisao", (req, res) => {
         if (dados[campo]) {
           dados[campo] = dados[campo].replace(/[./\-\s]/g, "");
 
-          if (!/^\d{14}$/.test(dados[campo])) {
-            throw new Error(`O campo ${campo} deve ter 14 dígitos.`);
+          if (! /^(?:\d{11}|\d{14})$/.test(dados[campo])) {
+            throw new Error(`O campo ${campo} deve ter 11 (CPF) ou 14 (CNPJ) dígitos.`);
           }
         }
       }
@@ -208,15 +216,15 @@ router.put("/:id/revisao", (req, res) => {
       if (dados.data_emissao) {
         const data = dados.data_emissao;
 
-        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(data)) {
-          throw new Error("Use a emissão no formato AAAA-MM-DDTHH:MM:SS.");
+        if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2})?$/.test(data)) {
+          throw new Error("Use a emissão no formato AAAA-MM-DD ou AAAA-MM-DDTHH:MM:SS.");
         }
 
-        const instante = new Date(`${data}Z`);
+        const instante = new Date(data.length === 10 ? `${data}T00:00:00Z` : `${data}Z`);
 
         if (
           Number.isNaN(instante.getTime()) ||
-          instante.toISOString().slice(0, 19) !== data
+          instante.toISOString().slice(0, data.length) !== data
         ) {
           throw new Error("A data de emissão é inválida.");
         }
@@ -281,7 +289,7 @@ router.put("/:id/revisao", (req, res) => {
       }
 
       if (
-        dados.iss_retido !== null &&
+        dados.iss_retido != null &&
         !["sim", "nao"].includes(dados.iss_retido)
       ) {
         throw new Error('ISS retido: informe "sim", "nao" ou deixe vazio.');
@@ -325,10 +333,10 @@ if (
 }
 
       for (const campo of camposDinheiro) {
-        dados[campo] = converterDinheiro(entrada[campo], campo);
+        if (campo in entrada) dados[campo] = converterDinheiro(entrada[campo], campo);
       }
 
-      const aliquota = entrada.aliquota_percentual;
+      const aliquota = entrada.aliquota_percentual ?? String(dados.aliquota_percentual ?? "");
 
       if (typeof aliquota !== "string") {
         throw new Error("Alíquota inválida.");
@@ -355,6 +363,10 @@ if (
       return res.status(400).json({ erro: erro.message });
     }
 
+    for (const campo of ["prestador_codigo_municipio", "tomador_codigo_municipio", "codigo_municipio_prestacao", "codigo_municipio_incidencia"]) {
+      if (dados[campo] && !/^\d{7}$/.test(dados[campo])) return res.status(400).json({erro: `Código IBGE inválido: ${campo}. Use sete dígitos.`});
+    }
+    if (dados.rps_status && !["1", "2"].includes(dados.rps_status)) return res.status(400).json({erro: "Status do RPS: use 1 ou 2, conforme o documento."});
     dados.campos_nao_encontrados = [
       "numero_nota",
       "data_emissao",
@@ -367,6 +379,11 @@ if (
 
     preencherCodigosMunicipios(dados);
 
+    const anteriores = JSON.parse(documento.dados_json);
+    dados.origens = {...dados.origens};
+    for (const campo of Object.keys(entrada)) {
+      if (JSON.stringify(dados[campo]) !== JSON.stringify(anteriores[campo])) dados.origens[campo] = {metodo: "revisão manual"};
+    }
     dados.revisado_em = new Date().toISOString();
 
     const novoJson = JSON.stringify(dados);
@@ -389,16 +406,16 @@ if (
       id,
       versao: documento.dados_json,
       novoJson,
-      numero_nota: dados.numero_nota,
-      codigo_verificacao: dados.codigo_verificacao,
-      data_emissao: dados.data_emissao,
-      competencia: dados.competencia,
-      cnpj_prestador: dados.cnpj_prestador,
-      nome_prestador: dados.nome_prestador,
-      cnpj_tomador: dados.cnpj_tomador,
-      nome_tomador: dados.nome_tomador,
-      valor_servicos_centavos: dados.valor_servicos_centavos,
-      valor_liquido_centavos: dados.valor_liquido_centavos,
+      numero_nota: dados.numero_nota ?? null,
+      codigo_verificacao: dados.codigo_verificacao ?? null,
+      data_emissao: dados.data_emissao ?? null,
+      competencia: dados.competencia ?? null,
+      cnpj_prestador: dados.cnpj_prestador ?? null,
+      nome_prestador: dados.nome_prestador ?? null,
+      cnpj_tomador: dados.cnpj_tomador ?? null,
+      nome_tomador: dados.nome_tomador ?? null,
+      valor_servicos_centavos: dados.valor_servicos_centavos ?? null,
+      valor_liquido_centavos: dados.valor_liquido_centavos ?? null,
     });
 
     if (!resultado.changes) {
@@ -408,7 +425,7 @@ if (
     }
 
     res.json({
-      mensagem: "Revisão salva. Documento ainda pendente.",
+      mensagem: "Revisão salva. O XML usará estes dados.",
       versao: novoJson,
     });
   } catch (erro) {

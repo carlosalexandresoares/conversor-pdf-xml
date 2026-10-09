@@ -1,18 +1,26 @@
 {
   "name": "conversor-pdf-xml",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "2.0.0",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Conversor local de documentos PDF com revisão e exportação em lote",
   "dependencies": {
+    "@tesseract.js-data/por": "^1.0.0",
+    "archiver": "^7.0.1",
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
     "multer": "^2.4.0",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "5.4.296",
+    "tesseract.js": "^6.0.1"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

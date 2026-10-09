@@ -1,347 +1,209 @@
-const formulario = document.querySelector("#form-upload");
-const campoPdf = document.querySelector("#pdf");
-const botaoEnviar = document.querySelector("#enviar");
-const mensagem = document.querySelector("#mensagem");
-const lista = document.querySelector("#documentos");
-
-async function lerResposta(resposta) {
-  const texto = await resposta.text();
-  let dados;
-  try { dados = JSON.parse(texto); }
-  catch { throw new Error(`O servidor retornou uma resposta inesperada (HTTP ${resposta.status}).`); }
-  if (!resposta.ok) throw new Error(dados.erro || `Falha na operação (HTTP ${resposta.status}).`);
-  return dados;
-}
-
-const processamentos = new Map();
-function prepararDocumento(id, novo = false) {
-  if (processamentos.has(id)) return processamentos.get(id);
-  const tarefa = (async () => {
-    let temModelo = false;
-    if (!novo) {
-      const resposta = await fetch(`/api/documentos/${id}/revisao`);
-      if (resposta.ok) {
-        const revisao = await lerResposta(resposta);
-        // Nunca reidentifica os campos de um documento já revisado.
-        if (revisao.dados.revisado_em) return;
-        temModelo = Boolean(revisao.dados.modelo);
-      } else if (resposta.status !== 400) {
-        await lerResposta(resposta);
-      }
-    }
-    const etapas = temModelo ? ["complementos"] : [
-      "extrair-texto", "identificar-campos", "complementos"
-    ];
-    for (const etapa of etapas) {
-      mensagem.textContent = `Processando documento #${id}...`;
-      await lerResposta(await fetch(`/api/documentos/${id}/${etapa}`, { method: "POST" }));
-    }
-  })();
-  processamentos.set(id, tarefa);
-  tarefa.finally(() => processamentos.delete(id)).catch(() => {});
-  return tarefa;
-}
-
-async function baixarXml(id) {
-  let aviso = "";
-  try { await prepararDocumento(id); }
-  catch (erro) { aviso = ` Extração não concluída: ${erro.message}`; }
-  const resposta = await fetch(`/api/documentos/${id}/xml-teste`);
-  if (!resposta.ok) await lerResposta(resposta);
-  const url = URL.createObjectURL(await resposta.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `documento-${id}-abrasf.xml`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  mensagem.textContent = "XML baixado com os dados disponíveis. Campos ausentes foram omitidos." + aviso;
-}
-
-async function carregarDocumentos() {
-  const dados = await lerResposta(await fetch("/api/documentos"));
-  lista.replaceChildren();
-  if (!dados.length) {
-    const item = document.createElement("li");
-    item.textContent = "Nenhum documento cadastrado.";
-    lista.appendChild(item);
-    return;
-  }
-  for (const documento of dados) {
-    const item = document.createElement("li");
-    const descricao = document.createElement("span");
-    descricao.textContent = `#${documento.id} — ${documento.nome_arquivo} — Status: ${documento.status} `;
-    const revisar = document.createElement("button");
-    revisar.type = "button";
-    revisar.textContent = "Revisar dados";
-    const baixar = document.createElement("button");
-    baixar.type = "button";
-    baixar.textContent = "Baixar XML";
-    async function executar(acao) {
-      revisar.disabled = baixar.disabled = true;
-      try { await acao(); }
-      catch (erro) { mensagem.textContent = erro.message; }
-      finally { revisar.disabled = baixar.disabled = false; }
-    }
-    revisar.addEventListener("click", () => executar(async () => {
-      let aviso = "";
-      try { await prepararDocumento(documento.id); }
-      catch (erro) { aviso = ` Extração não concluída: ${erro.message}`; }
-      await abrirRevisao(documento.id);
-      mensagem.textContent += aviso;
-    }));
-    baixar.addEventListener("click", () => executar(() => baixarXml(documento.id)));
-    item.append(descricao, revisar, " ", baixar);
-    lista.appendChild(item);
-  }
-}
-
-formulario.addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  const arquivo = campoPdf.files[0];
-  if (!arquivo) return;
-  if (arquivo.size > 10 * 1024 * 1024) {
-    mensagem.textContent = "O PDF deve ter no máximo 10 MB.";
-    return;
-  }
-  botaoEnviar.disabled = true;
-  mensagem.textContent = "Enviando e processando PDF...";
+'use strict';
+const $=s=>document.querySelector(s);
+let documentos=[],selecionados=new Set(),pagina=1,arquivos=[],enviando=false,baixando=false,revisao=null,alterado=false,salvando=false,carregando=false;
+let definicoes=[];
+const tamanhoPagina=25;
+const formatoMoeda=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
+const dataCurta=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR');};
+function notificar(texto,erro=false){const el=$('#mensagem');el.textContent=texto;el.hidden=!texto;el.classList.toggle('error',erro);}
+function el(tag,classe,texto){const n=document.createElement(tag);if(classe)n.className=classe;if(texto!=null)n.textContent=texto;return n;}
+async function requisicao(url,opcoes={}){
+  const controlador=new AbortController();const timer=setTimeout(()=>controlador.abort(),60000);
   try {
-    const envio = new FormData();
-    envio.append("pdf", arquivo);
-    const dados = await lerResposta(await fetch("/api/documentos/upload", { method: "POST", body: envio }));
-    formulario.reset();
-    try {
-      await prepararDocumento(dados.id, true);
-      mensagem.textContent = "PDF salvo e processado. Você pode revisar os dados ou baixar o XML.";
-    } catch (erro) {
-      mensagem.textContent = `PDF salvo, mas a extração não foi concluída: ${erro.message} O XML pode ser baixado com os dados disponíveis.`;
-    }
-    try { await carregarDocumentos(); }
-    catch (erro) { mensagem.textContent += ` ${erro.message}`; }
-  } catch (erro) { mensagem.textContent = erro.message; }
-  finally { botaoEnviar.disabled = false; }
+    const resposta=await fetch(url,{...opcoes,signal:controlador.signal});
+    if(!resposta.ok){let erro;try{erro=await resposta.json()}catch{}throw new Error(erro?.erro||`O servidor retornou HTTP ${resposta.status}. Atualize a página.`);}
+    return resposta;
+  }catch(erro){
+    if(erro.name==='AbortError')throw new Error('O servidor demorou para responder. Verifique a lista antes de reenviar o arquivo.');
+    if(erro instanceof TypeError)throw new Error('Sem conexão com o servidor. Confira se o terminal com “npm start” continua aberto e use o endereço http://localhost:3000 neste computador.');
+    throw erro;
+  }finally{clearTimeout(timer);}
+}
+async function json(url,opcoes){const r=await requisicao(url,opcoes);try{return await r.json()}catch{throw new Error('Resposta inesperada do servidor. Atualize com Ctrl+F5.');}}
+function status(doc){
+  if(doc.processamento==='fila')return ['Na fila','blue'];
+  if(doc.processamento==='processando')return ['Lendo PDF','blue'];
+  if(doc.processamento==='erro')return ['Falha na leitura','red'];
+  if(doc.revisado_em)return ['Revisão salva','green'];
+  return ['Para revisar',''];
+}
+function filtrados(){
+  const termo=$('#busca').value.trim().toLocaleLowerCase('pt-BR');const filtro=$('#filtro').value;
+  return documentos.filter(d=>{
+    if(termo&&![d.nome_arquivo,d.numero_nota,d.nome_prestador,d.nome_tomador].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(termo)))return false;
+    if(filtro==='revisados')return !!d.revisado_em;
+    if(filtro==='pendentes')return !d.revisado_em&&!['fila','processando'].includes(d.processamento);
+    if(filtro==='fila')return ['fila','processando'].includes(d.processamento);
+    if(filtro==='erro')return d.processamento==='erro';
+    return true;
+  });
+}
+function atualizarAcoes(){
+  const n=selecionados.size;
+  $('#revisar-selecionado').disabled=n!==1||baixando;
+  $('#baixar-selecionado').disabled=!n||baixando;
+  $('#baixar-selecionado').textContent=baixando?'Preparando…':n>1?`Baixar XMLs (${n})`:'Baixar XML';
+  $('#selecao-info').textContent=n?`${n} documento${n>1?'s':''} selecionado${n>1?'s':''}${n>1?' • Download em ZIP. Selecione apenas um para revisar.':''}`:'Selecione documentos para começar.';
+  const ids=filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina).map(d=>d.id);
+  const selecionadosNaPagina=ids.filter(id=>selecionados.has(id)).length;
+  $('#selecionar-todos').checked=ids.length>0&&selecionadosNaPagina===ids.length;
+  $('#selecionar-todos').indeterminate=selecionadosNaPagina>0&&selecionadosNaPagina<ids.length;
+  $('#selecionar-todos').disabled=!ids.length;
+}
+function renderizar(){
+  $('#total').textContent=$('#nav-total').textContent=documentos.length;
+  $('#em-fila').textContent=documentos.filter(d=>['fila','processando'].includes(d.processamento)).length;
+  $('#a-revisar').textContent=documentos.filter(d=>!d.revisado_em&&!['fila','processando'].includes(d.processamento)).length;
+  $('#revisados').textContent=documentos.filter(d=>d.revisado_em).length;
+  const lista=filtrados(),paginas=Math.max(1,Math.ceil(lista.length/tamanhoPagina));pagina=Math.min(pagina,paginas);
+  const tbody=$('#documentos');tbody.replaceChildren();
+  for(const doc of lista.slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina)){
+    const linha=el('tr',selecionados.has(doc.id)?'selected':'');
+    const check=el('input');check.type='checkbox';check.checked=selecionados.has(doc.id);check.setAttribute('aria-label',`Selecionar ${doc.nome_arquivo}`);
+    check.addEventListener('change',()=>{if(check.checked)selecionados.add(doc.id);else selecionados.delete(doc.id);linha.classList.toggle('selected',check.checked);atualizarAcoes();});
+    linha.addEventListener('click',evento=>{if(evento.target!==check){check.checked=!check.checked;check.dispatchEvent(new Event('change'));}});
+    const celulaCheck=el('td','check-col');celulaCheck.append(check);
+    const nome=el('td'),wrap=el('div','doc-cell'),detalhes=el('div');
+    const titulo=el('div','doc-name',doc.nome_arquivo);titulo.title=doc.nome_arquivo;
+    detalhes.append(titulo,el('div','doc-sub',`#${doc.id} • ${dataCurta(doc.criado_em)}${doc.numero_nota?' • Nota '+doc.numero_nota:''}`));
+    wrap.append(el('span','file-icon','PDF'),detalhes);nome.append(wrap);
+    const empresa=el('td');const nomeEmpresa=el('div','company',doc.nome_prestador||'Não identificado');nomeEmpresa.title=doc.nome_prestador||'';empresa.append(nomeEmpresa);
+    const valor=el('td','money',doc.valor_servicos_centavos==null?'—':formatoMoeda.format(doc.valor_servicos_centavos/100));
+    const situacao=el('td');const [rotulo,cor]=status(doc);const badge=el('span','badge '+cor,rotulo);badge.title=doc.erro_processamento||doc.avisos.join('\n');situacao.append(badge);
+    linha.append(celulaCheck,nome,empresa,valor,situacao);tbody.append(linha);
+  }
+  $('#vazio').hidden=lista.length!==0;
+  $('#contagem').textContent=lista.length?`${(pagina-1)*tamanhoPagina+1}–${Math.min(pagina*tamanhoPagina,lista.length)} de ${lista.length} documentos`:'Nenhum documento';
+  $('#pagina').textContent=`${pagina} / ${paginas}`;$('#anterior').disabled=pagina===1;$('#proxima').disabled=pagina===paginas;
+  atualizarAcoes();
+}
+async function carregar(){
+  if(carregando)return;carregando=true;
+  try{
+    const novos=await json('/api/documentos');const mudou=JSON.stringify(novos)!==JSON.stringify(documentos);
+    documentos=novos;selecionados=new Set([...selecionados].filter(id=>documentos.some(d=>d.id===id)));
+    if(mudou||!$('#contagem').textContent)renderizar();$('#conexao').textContent='● Servidor conectado';$('#conexao').classList.remove('offline');
+  }catch(erro){$('#conexao').textContent='● Sem conexão';$('#conexao').classList.add('offline');notificar(erro.message,true);}
+  finally{carregando=false;}
+}
+for(const id of ['#busca','#filtro'])$(id).addEventListener('input',()=>{pagina=1;renderizar();});
+$('#anterior').addEventListener('click',()=>{pagina--;renderizar();});$('#proxima').addEventListener('click',()=>{pagina++;renderizar();});
+$('#selecionar-todos').addEventListener('change',()=>{const marcar=$('#selecionar-todos').checked;for(const d of filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina))marcar?selecionados.add(d.id):selecionados.delete(d.id);renderizar();});
+function escolherArquivos(itens){
+  if(enviando)return;
+  if(itens.length>50){notificar('Selecione até 50 PDFs por lote.',true);return;}
+  arquivos=[...itens];$('#arquivos-escolhidos').textContent=`${arquivos.length} arquivo${arquivos.length!==1?'s':''} selecionado${arquivos.length!==1?'s':''}`;$('#upload-actions').hidden=!arquivos.length;
+  $('#fila-envio').replaceChildren();
+}
+$('#pdf').addEventListener('change',()=>escolherArquivos($('#pdf').files));
+const drop=$('#dropzone');
+for(const tipo of ['dragenter','dragover'])drop.addEventListener(tipo,e=>{e.preventDefault();drop.classList.add('dragging');});
+for(const tipo of ['dragleave','drop'])drop.addEventListener(tipo,e=>{e.preventDefault();drop.classList.remove('dragging');});
+drop.addEventListener('drop',e=>escolherArquivos(e.dataTransfer.files));
+$('#form-upload').addEventListener('submit',async e=>{
+  e.preventDefault();if(enviando||!arquivos.length)return;
+  enviando=true;$('#enviar').disabled=true;$('#pdf').disabled=true;$('#fila-envio').replaceChildren();
+  const lote=[...arquivos];let salvos=0,duplicados=0,falhas=0;
+  for(let i=0;i<lote.length;i++){
+    const arquivo=lote[i],linha=el('li'),nome=el('span','',arquivo.name),resultado=el('span','','Enviando…');linha.append(nome,resultado);$('#fila-envio').append(linha);
+    $('#enviar').textContent=`Enviando ${i+1}/${lote.length}`;
+    try{
+      if(!/\.pdf$/i.test(arquivo.name))throw new Error('Formato inválido: selecione um PDF.');
+      if(arquivo.size>20*1024*1024)throw new Error('O PDF excede 20 MB.');
+      const dados=new FormData();dados.append('pdf',arquivo);
+      const r=await json('/api/documentos/upload',{method:'POST',body:dados});
+      if(r.duplicado){duplicados++;resultado.textContent=`Já cadastrado • #${r.id}`;}else{salvos++;resultado.textContent='Salvo • leitura na fila';}
+      resultado.className='success';selecionados.add(r.id);
+    }catch(erro){falhas++;resultado.textContent=erro.message;resultado.className='error';}
+    await carregar();renderizar();
+  }
+  enviando=false;$('#enviar').disabled=false;$('#enviar').textContent='Importar arquivos';$('#pdf').disabled=false;$('#pdf').value='';arquivos=[];$('#upload-actions').hidden=true;
+  notificar(`Lote concluído: ${salvos} novo(s), ${duplicados} já cadastrado(s), ${falhas} falha(s). A leitura continua no servidor.`,falhas>0);
 });
-
-let documentoEmRevisao = null;
-
-
-let versaoRevisao = null;
-
-
-
-const definicoesRevisao = [
-  ["numero_nota", "Número da nota"],
-  ["codigo_verificacao", "Código de verificação"],
-  ["data_emissao", "Emissão — AAAA-MM-DDTHH:MM:SS"],
-  ["competencia", "Competência — AAAA-MM"],
-  ["cnpj_prestador", "CNPJ do prestador"],
-  ["nome_prestador", "Nome do prestador"],
-  ["cnpj_tomador", "CNPJ do tomador"],
-  ["nome_tomador", "Nome do tomador"],
-  ["valor_servicos_centavos", "Valor dos serviços (R$)"],
-  ["valor_liquido_centavos", "Valor líquido (R$)"],
-  ["valor_total_nota_centavos", "Valor total da nota (R$)"],
-  ["aliquota_percentual", "Alíquota (%)"],
-  ["valor_iss_centavos", "ISS (R$)"],
-  ["valor_ibs_centavos", "IBS (R$)"],
-  ["valor_cbs_centavos", "CBS (R$)"],
-  ["rps_numero", "Número do RPS"],
-  ["rps_serie", "Série do RPS"],
-  ["rps_tipo", "Tipo do RPS"],
-  ["rps_data", "Data do RPS — AAAA-MM-DD"],
-  ["codigo_servico_municipal", "Código municipal do serviço"],
-  ["item_lista_servico", "Item da lista de serviços"],
-  ["descricao_servico", "Descrição do serviço"],
-  ["discriminacao_servicos", "Discriminação e informações relevantes"],
-];
-
-definicoesRevisao.push(
-  ["competencia_xml", "Competência para XML — AAAA-MM-DD"],
-  ["item_lista_servico_xml", "Código confirmado para ItemListaServico do XML"],
-  ["incentivo_fiscal_xml", "Incentivo fiscal — código XML confirmado (1 ou 2)"]
-);
-
-definicoesRevisao.push(
-  ["codigo_municipio_prestacao", "Prestação — Código IBGE"],
-  ["codigo_municipio_incidencia", "Incidência do ISS — Código IBGE"]
-);
-
-definicoesRevisao.push(
-  ["base_calculo_centavos", "Base de cálculo (R$)"],
-  ["valor_pis_centavos", "PIS (R$)"],
-  ["valor_cofins_centavos", "COFINS (R$)"],
-  ["valor_inss_centavos", "INSS (R$)"],
-  ["valor_ir_centavos", "IR (R$)"],
-  ["valor_csll_centavos", "CSLL (R$)"],
-  ["iss_retido", "ISS retido — sim / nao / vazio"],
-  ["municipio_prestacao", "Município de prestação"],
-  ["uf_prestacao", "UF de prestação"],
-  ["municipio_incidencia", "Município de incidência do ISS"],
-  ["uf_incidencia", "UF de incidência do ISS"]
-);
-
-definicoesRevisao.push(
-  ["prestador_codigo_municipio", "Prestador — Código IBGE"],
-  ["tomador_codigo_municipio", "Tomador — Código IBGE"]
-);
-
-const camposEndereco = [
-  ["endereco", "Endereço"],
-  ["numero", "Número"],
-  ["complemento", "Complemento"],
-  ["bairro", "Bairro"],
-  ["cep", "CEP"],
-  ["municipio", "Município"],
-  ["uf", "UF"],
-  ["inscricao_municipal", "Inscrição municipal"],
-  ["email", "E-mail"],
-  ["telefone", "Telefone"],
-];
-
-for (const [pessoa, titulo] of [
-  ["prestador", "Prestador"],
-  ["tomador", "Tomador"],
-]) {
-  for (const [campo, rotulo] of camposEndereco) {
-    definicoesRevisao.push([
-      `${pessoa}_${campo}`,
-      `${titulo} — ${rotulo}`,
-    ]);
+async function salvarDownload(resposta,nome){
+  const blob=await resposta.blob();const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download=nome;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+$('#baixar-selecionado').addEventListener('click',async()=>{
+  if(baixando||!selecionados.size)return;const ids=[...selecionados];
+  if(ids.length>100){notificar('Baixe até 100 XMLs por lote.',true);return;}
+  baixando=true;atualizarAcoes();
+  try{
+    if(ids.length===1)await salvarDownload(await requisicao(`/api/documentos/${ids[0]}/xml`),`documento-${ids[0]}-abrasf.xml`);
+    else await salvarDownload(await requisicao('/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})}),'xml-selecionados.zip');
+    notificar(ids.length===1?'XML baixado com os dados disponíveis. Confira o documento antes da importação fiscal.':'ZIP baixado. Consulte também o relatório de exportação incluído no arquivo.');
+  }catch(erro){notificar(erro.message,true);}finally{baixando=false;atualizarAcoes();}
+});
+function grupo(campo){
+  if(campo.startsWith('prestador_')||campo.endsWith('_prestador'))return 'Prestador';
+  if(campo.startsWith('tomador_')||campo.endsWith('_tomador'))return 'Tomador';
+  if(campo.startsWith('rps_'))return 'RPS';
+  if(campo.endsWith('_xml'))return 'Campos adicionais do XML';
+  if(campo.includes('_centavos')||campo==='aliquota_percentual'||campo==='iss_retido')return 'Valores e tributos';
+  if(campo.includes('servico')||campo.includes('municipio')||campo.startsWith('uf_'))return 'Serviço e municípios';
+  return 'Identificação da nota';
+}
+function renderizarCampos(dados){
+  const area=$('#campos-revisao');area.replaceChildren();const grupos=new Map();
+  for(const [campo,titulo] of definicoes){
+    const nomeGrupo=grupo(campo);
+    if(!grupos.has(nomeGrupo)){const detalhe=el('details','field-group');detalhe.open=['Identificação da nota','Valores e tributos'].includes(nomeGrupo);detalhe.append(el('summary','',nomeGrupo));const grid=el('div','fields-grid');detalhe.append(grid);area.append(detalhe);grupos.set(nomeGrupo,grid);}
+    const longo=['descricao_servico','discriminacao_servicos'].includes(campo),label=el('label','field'+(longo?' full':''));label.append(el('span','',titulo));
+    const opcoes=campo==='iss_retido'?[['','Não informado'],['sim','Sim'],['nao','Não']]:campo==='incentivo_fiscal_xml'?[['','Não informado'],['1','1 — Sim'],['2','2 — Não']]:null;
+    const input=el(opcoes?'select':longo?'textarea':'input');
+    if(opcoes)for(const [value,texto] of opcoes){const option=el('option','',texto);option.value=value;input.append(option);}
+    else if(longo){input.rows=4;input.maxLength=10000;}
+    else{input.type='text';input.maxLength=300;}
+    input.name=campo;
+    const valor=dados[campo];input.value=valor==null?'':campo.endsWith('_centavos')?(valor/100).toFixed(2).replace('.',','):String(valor);
+    if(campo.endsWith('_centavos')||campo==='aliquota_percentual')input.inputMode='decimal';
+    label.append(input);
+    const origem=dados.origens?.[campo];if(origem){const fonte=el('small','',`Origem: ${origem.metodo}`);fonte.title=origem.trecho||'';label.append(fonte);}
+    grupos.get(nomeGrupo).append(label);
   }
 }
-
-async function abrirRevisao(id) {
-  const secao = document.querySelector("#secao-revisao");
-  const area = document.querySelector("#campos-revisao");
-  const aviso = document.querySelector("#mensagem-revisao");
-
-  // Fecha a revisão anterior enquanto carrega a nova.
-  documentoEmRevisao = null;
-  secao.hidden = true;
-  mensagem.textContent = "Abrindo revisão...";
-
-  try {
-    const resposta = await fetch(`/api/documentos/${id}/revisao`);
-    const resultado = await lerResposta(resposta);
-
-    if (!resposta.ok) {
-      throw new Error(resultado.erro || "Erro ao abrir revisão.");
-    }
-
-    documentoEmRevisao = id;
-    versaoRevisao = resultado.versao;
-
-    document.querySelector("#titulo-revisao").textContent =
-      `Revisar: ${resultado.nome_arquivo}`;
-
-    area.replaceChildren();
-
-    for (const [campo, titulo] of definicoesRevisao) {
-      const label = document.createElement("label");
-      label.textContent = titulo;
-
-      const campoLongo = [
-        "descricao_servico",
-        "discriminacao_servicos",
-      ].includes(campo);
-
-      const input = document.createElement(
-        campoLongo ? "textarea" : "input"
-      );
-
-      if (campoLongo) {
-        input.rows = 5;
-      } else {
-        input.type = "text";
-      }
-
-      input.name = campo;
-      if (
-  campo.endsWith("_codigo_municipio") ||
-  campo.startsWith("codigo_municipio_")
-) {
-        input.readOnly = true;
-        input.placeholder = "Município ainda não cadastrado";
-      }
-      
-      input.maxLength = campoLongo ? 10000 : 300;
-
-      const valor = resultado.dados[campo];
-
-      if (campo.endsWith("_centavos")) {
-        input.inputMode = "decimal";
-        input.value = valor == null
-          ? ""
-          : (valor / 100).toFixed(2).replace(".", ",");
-      } else {
-        input.value = valor == null ? "" : String(valor);
-      }
-
-      label.appendChild(input);
-      area.appendChild(label);
-    }
-
-    aviso.textContent = "";
-    mensagem.textContent = "Dados carregados para revisão.";
-    secao.hidden = false;
-    secao.scrollIntoView({ behavior: "smooth" });
-  } catch (erro) {
-    mensagem.textContent = erro.message;
-  }
+async function abrirRevisao(id){
+  if(!definicoes.length)definicoes=await json('/campos.json');
+  const resultado=await json(`/api/documentos/${id}/revisao`);revisao=resultado;alterado=false;
+  $('#titulo-revisao').textContent=resultado.nome_arquivo;
+  $('#preview-pdf').src=`/visualizar.html?id=${id}`;
+  $('#abrir-pdf').href=`/api/documentos/${id}/pdf`;
+  $('#texto-extraido').textContent=resultado.texto_extraido||'Nenhum texto extraído. Você pode preencher os campos manualmente usando o PDF original.';
+  const avisos=[...(resultado.dados.avisos||[])];
+  if(resultado.erro_processamento)avisos.unshift(resultado.erro_processamento);
+  if(['fila','processando'].includes(resultado.processamento))avisos.unshift('A leitura está em andamento. Feche e reabra esta revisão quando terminar.');
+  $('#aviso-revisao').textContent=avisos.join('\n');$('#aviso-revisao').hidden=!avisos.length;
+  $('#salvar-revisao').disabled=['fila','processando'].includes(resultado.processamento);
+  $('#tentar-leitura').hidden=resultado.processamento!=='erro'||!!resultado.dados.revisado_em;
+  $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);trocarAba(false);
+  if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
 }
-
-document.querySelector("#form-revisao").addEventListener(
-  "submit",
-  async (evento) => {
-    evento.preventDefault();
-
-    if (!documentoEmRevisao) return;
-
-    const botao = document.querySelector("#salvar-revisao");
-    const aviso = document.querySelector("#mensagem-revisao");
-
-    const campos = Object.fromEntries(
-      new FormData(evento.currentTarget).entries()
-    );
-
-    botao.disabled = true;
-    aviso.textContent = "Salvando...";
-
-    try {
-      const resposta = await fetch(
-        `/api/documentos/${documentoEmRevisao}/revisao`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campos,
-            versao: versaoRevisao,
-          }),
-        }
-      );
-
-      const resultado = await lerResposta(resposta);
-
-      if (!resposta.ok) {
-        throw new Error(resultado.erro || "Erro ao salvar revisão.");
-      }
-
-      versaoRevisao = resultado.versao;
-      aviso.textContent = resultado.mensagem;
-
-      try {
-        await carregarDocumentos();
-      } catch {
-        aviso.textContent += " Não foi possível atualizar a lista.";
-      }
-    } catch (erro) {
-      aviso.textContent = erro.message;
-    } finally {
-      botao.disabled = false;
-    }
-  }
-);
-
-carregarDocumentos().catch((erro) => { mensagem.textContent = erro.message; });
+$('#revisar-selecionado').addEventListener('click',async()=>{
+  if(selecionados.size!==1)return;$('#revisar-selecionado').disabled=true;
+  try{await abrirRevisao([...selecionados][0]);}catch(erro){notificar(erro.message,true);}finally{atualizarAcoes();}
+});
+function fechar(){
+  if(salvando)return;
+  if(alterado&&!confirm('Há alterações não salvas. Fechar a revisão e descartar essas alterações?'))return;
+  $('#revisao-dialog').close();$('#preview-pdf').removeAttribute('src');revisao=null;alterado=false;
+}
+$('#fechar-revisao').addEventListener('click',fechar);
+$('#revisao-dialog').addEventListener('cancel',e=>{e.preventDefault();fechar();});
+$('#form-revisao').addEventListener('input',()=>{alterado=true;});
+window.addEventListener('beforeunload',e=>{if(alterado||enviando){e.preventDefault();e.returnValue='';}});
+function trocarAba(texto){$('#tab-campos').setAttribute('aria-selected',String(!texto));$('#tab-texto').setAttribute('aria-selected',String(texto));$('#form-revisao').hidden=texto;$('#texto-extraido').hidden=!texto;}
+$('#tab-campos').addEventListener('click',()=>trocarAba(false));$('#tab-texto').addEventListener('click',()=>trocarAba(true));
+for(const seletor of ['#tab-campos','#tab-texto'])$(seletor).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const texto=seletor==='#tab-campos';trocarAba(texto);$(texto?'#tab-texto':'#tab-campos').focus();}});
+$('#form-revisao').addEventListener('submit',async e=>{
+  e.preventDefault();if(!revisao||salvando)return;
+  salvando=true;$('#salvar-revisao').disabled=true;$('#mensagem-revisao').textContent='Salvando…';
+  try{
+    const campos=Object.fromEntries(new FormData(e.currentTarget));
+    const r=await json(`/api/documentos/${revisao.id}/revisao`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({campos,versao:revisao.versao})});
+    revisao.versao=r.versao;alterado=false;$('#mensagem-revisao').textContent=r.mensagem;$('#tentar-leitura').hidden=true;await carregar();
+  }catch(erro){$('#mensagem-revisao').textContent=erro.message;}finally{salvando=false;$('#salvar-revisao').disabled=false;}
+});
+$('#tentar-leitura').addEventListener('click',async()=>{
+  if(!revisao||alterado){$('#mensagem-revisao').textContent='Salve ou descarte suas alterações antes de tentar novamente.';return;}
+  try{await json(`/api/documentos/${revisao.id}/processar`,{method:'POST'});fechar();await carregar();notificar('Documento adicionado à fila de leitura.');}catch(erro){$('#mensagem-revisao').textContent=erro.message;}
+});
+carregar();setInterval(()=>{if(!document.hidden)carregar();},2500);

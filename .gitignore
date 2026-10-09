@@ -1,20 +1,14 @@
 node_modules/
+data/
+uploads/
 .env
 .env.*
 !.env.example
-
-# Banco local e documentos enviados
-data/
-uploads/
-
-# Documentos fiscais
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.zip
 *.pdf
 *.xml
-*.sqlite
-*.sqlite3
-*.db
-*.db-*
-*.sqlite-*
-
-# Arquivos temporários
-*.log
+!tests/fixtures/*.pdf

@@ -1,9 +1,6 @@
 
-const municipios = {
-  "SP|BARUERI": "3505708",
-  "SP|SANTOS": "3548500",
-  "SP|ITAQUAQUECETUBA": "3523107",
-};
+// Fonte: API de Localidades do IBGE; cópia local de 09/10/2026.
+const municipios = require("./municipios-ibge.json");
 
 function normalizar(valor) {
   return String(valor || "")
@@ -42,7 +39,7 @@ function preencherCodigosMunicipios(dados) {
     const nome = normalizar(dados[grupo.municipio]);
     const uf = normalizar(dados[grupo.uf]);
 
-    dados[grupo.codigo] = municipios[`${uf}|${nome}`] || null;
+    dados[grupo.codigo] = municipios[`${uf}|${nome}`] || dados[grupo.codigo] || null;
   }
 
   return dados;
