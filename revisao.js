@@ -41,6 +41,11 @@ const camposTexto = [
   "tomador_inscricao_municipal",
   "tomador_email",
   "tomador_telefone",
+  "iss_retido",
+  "municipio_prestacao",
+  "uf_prestacao",
+  "municipio_incidencia",
+  "uf_incidencia",
 ];
 
 const camposDinheiro = [
@@ -50,6 +55,12 @@ const camposDinheiro = [
   "valor_iss_centavos",
   "valor_ibs_centavos",
   "valor_cbs_centavos",
+  "base_calculo_centavos",
+  "valor_pis_centavos",
+  "valor_cofins_centavos",
+  "valor_inss_centavos",
+  "valor_ir_centavos",
+  "valor_csll_centavos",
 ];
 
 function validarId(valor) {
@@ -266,6 +277,23 @@ router.put("/:id/revisao", (req, res) => {
         }
       }
 
+      if (
+        dados.iss_retido !== null &&
+        !["sim", "nao"].includes(dados.iss_retido)
+      ) {
+        throw new Error('ISS retido: informe "sim", "nao" ou deixe vazio.');
+      }
+
+      for (const campo of ["uf_prestacao", "uf_incidencia"]) {
+        if (dados[campo]) {
+          dados[campo] = dados[campo].toUpperCase();
+
+          if (!ufsValidas.has(dados[campo])) {
+            throw new Error(`UF inválida: ${campo}.`);
+          }
+        }
+      }
+
       for (const campo of camposDinheiro) {
         dados[campo] = converterDinheiro(entrada[campo], campo);
       }
@@ -310,7 +338,7 @@ router.put("/:id/revisao", (req, res) => {
     preencherCodigosMunicipios(dados);
 
     dados.revisado_em = new Date().toISOString();
-    
+
     const novoJson = JSON.stringify(dados);
 
     const resultado = db.prepare(`

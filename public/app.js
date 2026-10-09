@@ -252,6 +252,20 @@ const definicoesRevisao = [
 ];
 
 definicoesRevisao.push(
+  ["base_calculo_centavos", "Base de cálculo (R$)"],
+  ["valor_pis_centavos", "PIS (R$)"],
+  ["valor_cofins_centavos", "COFINS (R$)"],
+  ["valor_inss_centavos", "INSS (R$)"],
+  ["valor_ir_centavos", "IR (R$)"],
+  ["valor_csll_centavos", "CSLL (R$)"],
+  ["iss_retido", "ISS retido — sim / nao / vazio"],
+  ["municipio_prestacao", "Município de prestação"],
+  ["uf_prestacao", "UF de prestação"],
+  ["municipio_incidencia", "Município de incidência do ISS"],
+  ["uf_incidencia", "UF de incidência do ISS"]
+);
+
+definicoesRevisao.push(
   ["prestador_codigo_municipio", "Prestador — Código IBGE"],
   ["tomador_codigo_municipio", "Tomador — Código IBGE"]
 );

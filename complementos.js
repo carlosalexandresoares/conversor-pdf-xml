@@ -168,7 +168,103 @@ function extrairEnderecos(textoOriginal) {
       tomador, /Número:[ \t]*([^\s]+)/i
     );
   }
-  
+
+  return dados;
+}
+
+function extrairDadosFiscais(textoOriginal) {
+  const texto = textoOriginal.replace(/\r\n?/g, "\n");
+
+  const dados = {
+    base_calculo_centavos: null,
+    valor_pis_centavos: null,
+    valor_cofins_centavos: null,
+    valor_inss_centavos: null,
+    valor_ir_centavos: null,
+    valor_csll_centavos: null,
+    iss_retido: null,
+    municipio_prestacao: null,
+    uf_prestacao: null,
+    municipio_incidencia: null,
+    uf_incidencia: null,
+  };
+
+  function centavos(valor) {
+    if (!valor) return null;
+
+    const numero = Number(
+      valor.replace(/\./g, "").replace(",", ".")
+    );
+
+    return Number.isFinite(numero)
+      ? Math.round(numero * 100)
+      : null;
+  }
+
+  if (/PREFEITURA MUNICIPAL DE BARUERI/i.test(texto)) {
+    const tributos = texto.match(
+      /IRRF PIS\/PASEP COFINS CSLL\s*\n([\d.]+,\d{2})[ \t]+([\d.]+,\d{2})[ \t]+([\d.]+,\d{2})[ \t]+([\d.]+,\d{2})/i
+    );
+
+    if (tributos) {
+      dados.valor_ir_centavos = centavos(tributos[1]);
+      dados.valor_pis_centavos = centavos(tributos[2]);
+      dados.valor_cofins_centavos = centavos(tributos[3]);
+      dados.valor_csll_centavos = centavos(tributos[4]);
+    }
+
+    const incidencia = texto.match(
+      /ISSQN devido a:[ \t]*([^\n]+?)[ \t]*-[ \t]*([A-Z]{2})(?=\n|$)/i
+    );
+
+    if (incidencia) {
+      dados.municipio_incidencia = incidencia[1].trim();
+      dados.uf_incidencia = incidencia[2].toUpperCase();
+    }
+  } else if (/PREFEITURA MUNICIPAL DE SANTOS/i.test(texto)) {
+    // A sequência foi identificada no texto deste layout.
+    const valores = texto.match(
+      /Valor do Serviço\s*\nDesconto Incondicionado\s*\nDesconto Condicionado\s*\nOutras Retenções\s*\nDeduções Previstas em Lei\s*\nBase de Cálculo\s*\nAlíquota\s*\nISSQN\s*\n((?:[\d.]+,\d{2}\s*\n){7}[\d.]+,\d{2})/i
+    );
+
+    if (valores) {
+      const itens = valores[1].match(/[\d.]+,\d{2}/g);
+      dados.base_calculo_centavos = centavos(itens[5]);
+    }
+
+    // Os valores dos municípios aparecem antes dos títulos.
+    const municipios = texto.match(
+      /(?:^|\n)([^\n]+?)[ \t]+-[ \t]+([A-Z]{2})\s*\n([^\n]+?)[ \t]+-[ \t]+([A-Z]{2})\s*\nMunicípio Prestação\s*\nISSQN a Reter\s*\nMunícipio Incidência/i
+    );
+
+    if (municipios) {
+      dados.municipio_prestacao = municipios[1].trim();
+      dados.uf_prestacao = municipios[2].toUpperCase();
+      dados.municipio_incidencia = municipios[3].trim();
+      dados.uf_incidencia = municipios[4].toUpperCase();
+    }
+
+    // Neste exemplo aparecem duas marcações explícitas de "Não":
+    // Simples Nacional e ISSQN a Reter.
+    // Só interpreta o trecho de identificação fiscal.
+    const trechoFiscal = texto.split("Outras Informações")[0];
+    const marcacoesNao = trechoFiscal.match(
+      /\(\s*\)\s*Sim\s*\(\s*X\s*\)\s*Não/gi
+    ) || [];
+
+    if (
+      /Simples Nacional/.test(trechoFiscal) &&
+      /ISSQN a Reter/.test(trechoFiscal) &&
+      marcacoesNao.length === 2 &&
+      !/\(\s*X\s*\)\s*Sim/i.test(trechoFiscal)
+    ) {
+      dados.iss_retido = "nao";
+    }
+
+    // Os tributos federais ficam separados dos seus títulos.
+    // Serão conferidos manualmente nesta etapa, sem assumir zero.
+  }
+
   return dados;
 }
 
@@ -248,7 +344,10 @@ function extrairComplementos(textoOriginal) {
   } else {
     throw new Error("Layout ainda não reconhecido.");
   }
+  
   Object.assign(dados, extrairEnderecos(textoOriginal));
+  Object.assign(dados, extrairDadosFiscais(textoOriginal));
+
   return dados;
 }
 
