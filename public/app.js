@@ -93,6 +93,53 @@ async function carregarDocumentos() {
 
     item.append(" ", botaoComplementos);
 
+    const botaoPendencias = document.createElement("button");
+botaoPendencias.type = "button";
+botaoPendencias.textContent = "Verificar pendências";
+
+botaoPendencias.addEventListener("click", async () => {
+  botaoPendencias.disabled = true;
+
+  try {
+    const resposta = await fetch(
+      `/api/documentos/${documento.id}/pendencias`
+    );
+
+    const resultado = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(resultado.erro || "Erro ao verificar pendências.");
+    }
+
+    document.querySelector("#titulo-texto").textContent =
+      `Pendências: ${resultado.nome_arquivo}`;
+
+    const linhas = [
+      "PENDÊNCIAS",
+      ...(resultado.pendencias.length
+        ? resultado.pendencias.map((item) => `• ${item}`)
+        : ["Nenhuma ausência encontrada nesta verificação inicial."]),
+      "",
+      "AVISOS PARA CONFERÊNCIA",
+      ...(resultado.avisos.length
+        ? resultado.avisos.map((item) => `• ${item}`)
+        : ["Nenhum aviso."]),
+    ];
+
+    document.querySelector("#texto-documento").textContent =
+      linhas.join("\n");
+
+    mensagem.textContent =
+      "Verificação concluída. O documento ainda não foi liberado para exportação.";
+  } catch (erro) {
+    mensagem.textContent = erro.message;
+  } finally {
+    botaoPendencias.disabled = false;
+  }
+});
+
+item.append(" ", botaoPendencias);
+
     lista.appendChild(item);
   }
 }
