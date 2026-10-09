@@ -1,0 +1,266 @@
+const express = require("express");
+const db = require("./database");
+
+const router = express.Router();
+
+const camposTexto = [
+  "numero_nota",
+  "codigo_verificacao",
+  "data_emissao",
+  "competencia",
+  "cnpj_prestador",
+  "nome_prestador",
+  "cnpj_tomador",
+  "nome_tomador",
+];
+
+const camposDinheiro = [
+  "valor_servicos_centavos",
+  "valor_liquido_centavos",
+  "valor_total_nota_centavos",
+  "valor_iss_centavos",
+  "valor_ibs_centavos",
+  "valor_cbs_centavos",
+];
+
+function validarId(valor) {
+  const id = Number(valor);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function converterDinheiro(valor, campo) {
+  if (typeof valor !== "string") {
+    throw new Error(`Valor inválido: ${campo}.`);
+  }
+
+  const texto = valor.trim();
+  if (!texto) return null;
+
+  // Aceita 5745,84 ou 5745.84, sem separador de milhares.
+  if (!/^\d+(?:[.,]\d{1,2})?$/.test(texto)) {
+    throw new Error(
+      `Use um valor como 5745,84 no campo ${campo}.`
+    );
+  }
+
+  const [inteiro, fracao = ""] = texto.replace(",", ".").split(".");
+  const centavos = Number(inteiro) * 100 +
+    Number(fracao.padEnd(2, "0"));
+
+  if (!Number.isSafeInteger(centavos)) {
+    throw new Error(`Valor muito alto: ${campo}.`);
+  }
+
+  return centavos;
+}
+
+router.get("/:id/revisao", (req, res) => {
+  const id = validarId(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ erro: "ID inválido." });
+  }
+
+  try {
+    const documento = db.prepare(`
+      SELECT id, nome_arquivo, dados_json, status
+      FROM documentos WHERE id = ?
+    `).get(id);
+
+    if (!documento) {
+      return res.status(404).json({ erro: "Documento não encontrado." });
+    }
+
+    const dados = JSON.parse(documento.dados_json);
+
+    if (!dados.modelo) {
+      return res.status(400).json({
+        erro: 'Clique primeiro em "Identificar campos".',
+      });
+    }
+
+    res.json({
+      id: documento.id,
+      nome_arquivo: documento.nome_arquivo,
+      dados,
+      versao: documento.dados_json,
+    });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: "Não foi possível abrir a revisão." });
+  }
+});
+
+router.put("/:id/revisao", (req, res) => {
+  const id = validarId(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ erro: "ID inválido." });
+  }
+
+  try {
+    const documento = db.prepare(`
+      SELECT dados_json, status FROM documentos WHERE id = ?
+    `).get(id);
+
+    if (!documento) {
+      return res.status(404).json({ erro: "Documento não encontrado." });
+    }
+
+    if (documento.status === "conferido") {
+      return res.status(409).json({
+        erro: "O documento já foi conferido e está bloqueado nesta etapa.",
+      });
+    }
+
+    if (req.body?.versao !== documento.dados_json) {
+      return res.status(409).json({
+        erro: "Os dados foram alterados. Reabra a revisão antes de salvar.",
+      });
+    }
+
+    const entrada = req.body.campos;
+
+    if (!entrada || typeof entrada !== "object" || Array.isArray(entrada)) {
+      return res.status(400).json({ erro: "Campos inválidos." });
+    }
+
+    const dados = JSON.parse(documento.dados_json);
+
+    try {
+      for (const campo of camposTexto) {
+        if (typeof entrada[campo] !== "string") {
+          throw new Error(`Campo inválido: ${campo}.`);
+        }
+
+        const valor = entrada[campo].trim();
+
+        if (valor.length > 300) {
+          throw new Error(`Campo muito longo: ${campo}.`);
+        }
+
+        dados[campo] = valor || null;
+      }
+
+      for (const campo of ["cnpj_prestador", "cnpj_tomador"]) {
+        if (dados[campo]) {
+          dados[campo] = dados[campo].replace(/[./\-\s]/g, "");
+
+          if (!/^\d{14}$/.test(dados[campo])) {
+            throw new Error(`O campo ${campo} deve ter 14 dígitos.`);
+          }
+        }
+      }
+
+      if (dados.competencia &&
+          !/^\d{4}-(0[1-9]|1[0-2])$/.test(dados.competencia)) {
+        throw new Error("Use a competência no formato AAAA-MM.");
+      }
+
+      if (dados.data_emissao) {
+        const data = dados.data_emissao;
+
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(data)) {
+          throw new Error("Use a emissão no formato AAAA-MM-DDTHH:MM:SS.");
+        }
+
+        const instante = new Date(`${data}Z`);
+
+        if (
+          Number.isNaN(instante.getTime()) ||
+          instante.toISOString().slice(0, 19) !== data
+        ) {
+          throw new Error("A data de emissão é inválida.");
+        }
+      }
+
+      for (const campo of camposDinheiro) {
+        dados[campo] = converterDinheiro(entrada[campo], campo);
+      }
+
+      const aliquota = entrada.aliquota_percentual;
+
+      if (typeof aliquota !== "string") {
+        throw new Error("Alíquota inválida.");
+      }
+
+      const textoAliquota = aliquota.trim();
+
+      if (!textoAliquota) {
+        dados.aliquota_percentual = null;
+      } else {
+        if (!/^\d+(?:[.,]\d{1,4})?$/.test(textoAliquota)) {
+          throw new Error("Use uma alíquota como 2 ou 2,5.");
+        }
+
+        const numero = Number(textoAliquota.replace(",", "."));
+
+        if (numero > 100) {
+          throw new Error("A alíquota deve estar entre 0 e 100.");
+        }
+
+        dados.aliquota_percentual = numero;
+      }
+    } catch (erro) {
+      return res.status(400).json({ erro: erro.message });
+    }
+
+    dados.campos_nao_encontrados = [
+      "numero_nota",
+      "data_emissao",
+      "cnpj_prestador",
+      "nome_prestador",
+      "cnpj_tomador",
+      "nome_tomador",
+      "valor_servicos_centavos",
+    ].filter((campo) => dados[campo] == null);
+
+    const novoJson = JSON.stringify(dados);
+
+    const resultado = db.prepare(`
+      UPDATE documentos SET
+        numero_nota = @numero_nota,
+        codigo_verificacao = @codigo_verificacao,
+        data_emissao = @data_emissao,
+        competencia = @competencia,
+        cnpj_prestador = @cnpj_prestador,
+        nome_prestador = @nome_prestador,
+        cnpj_tomador = @cnpj_tomador,
+        nome_tomador = @nome_tomador,
+        valor_servicos_centavos = @valor_servicos_centavos,
+        valor_liquido_centavos = @valor_liquido_centavos,
+        dados_json = @novoJson
+      WHERE id = @id AND dados_json = @versao AND status = 'pendente'
+    `).run({
+      id,
+      versao: documento.dados_json,
+      novoJson,
+      numero_nota: dados.numero_nota,
+      codigo_verificacao: dados.codigo_verificacao,
+      data_emissao: dados.data_emissao,
+      competencia: dados.competencia,
+      cnpj_prestador: dados.cnpj_prestador,
+      nome_prestador: dados.nome_prestador,
+      cnpj_tomador: dados.cnpj_tomador,
+      nome_tomador: dados.nome_tomador,
+      valor_servicos_centavos: dados.valor_servicos_centavos,
+      valor_liquido_centavos: dados.valor_liquido_centavos,
+    });
+
+    if (!resultado.changes) {
+      return res.status(409).json({
+        erro: "Os dados mudaram. Reabra a revisão.",
+      });
+    }
+
+    res.json({
+      mensagem: "Revisão salva. Documento ainda pendente.",
+      versao: novoJson,
+    });
+  } catch (erro) {
+    console.error(erro);
+    res.status(500).json({ erro: "Não foi possível salvar a revisão." });
+  }
+});
+
+module.exports = router;

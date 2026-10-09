@@ -22,41 +22,50 @@ async function carregarDocumentos() {
   }
 
   for (const documento of dados) {
-  const item = document.createElement("li");
-  const descricao = document.createElement("span");
+    const item = document.createElement("li");
+    const descricao = document.createElement("span");
 
-  descricao.textContent =
-    `#${documento.id} — ${documento.nome_arquivo} ` +
-    `— Status: ${documento.status} `;
+    descricao.textContent =
+      `#${documento.id} — ${documento.nome_arquivo} ` +
+      `— Status: ${documento.status} `;
 
-  const botaoLer = document.createElement("button");
-  botaoLer.type = "button";
-  botaoLer.textContent = "Ler texto";
-  botaoLer.addEventListener("click", () => {
-    abrirTexto(documento.id, true, botaoLer);
-  });
+    const botaoLer = document.createElement("button");
+    botaoLer.type = "button";
+    botaoLer.textContent = "Ler texto";
+    botaoLer.addEventListener("click", () => {
+      abrirTexto(documento.id, true, botaoLer);
+    });
 
-  const botaoConsultar = document.createElement("button");
-  botaoConsultar.type = "button";
-  botaoConsultar.textContent = "Ver texto salvo";
-  botaoConsultar.addEventListener("click", () => {
-    abrirTexto(documento.id, false, botaoConsultar);
-  });
+    const botaoConsultar = document.createElement("button");
+    botaoConsultar.type = "button";
+    botaoConsultar.textContent = "Ver texto salvo";
+    botaoConsultar.addEventListener("click", () => {
+      abrirTexto(documento.id, false, botaoConsultar);
+    });
 
-  item.append(descricao, botaoLer, " ", botaoConsultar);
+    item.append(descricao, botaoLer, " ", botaoConsultar);
 
-  const botaoCampos = document.createElement("button");
-botaoCampos.type = "button";
-botaoCampos.textContent = "Identificar campos";
+    const botaoCampos = document.createElement("button");
+    botaoCampos.type = "button";
+    botaoCampos.textContent = "Identificar campos";
 
-botaoCampos.addEventListener("click", () => {
-  identificarCampos(documento.id, botaoCampos);
-});
+    botaoCampos.addEventListener("click", () => {
+      identificarCampos(documento.id, botaoCampos);
+    });
 
-item.append(" ", botaoCampos);
+    const botaoRevisar = document.createElement("button");
+    botaoRevisar.type = "button";
+    botaoRevisar.textContent = "Revisar dados";
+    botaoRevisar.addEventListener("click", () => {
+      abrirRevisao(documento.id);
+    });
 
-  lista.appendChild(item);
-}
+    item.append(" ", botaoRevisar);
+
+    item.append(" ", botaoCampos);
+
+    lista.appendChild(item);
+  }
 }
 
 formulario.addEventListener("submit", async (evento) => {
@@ -183,3 +192,135 @@ async function identificarCampos(id, botao) {
     botao.disabled = false;
   }
 }
+
+let documentoEmRevisao = null;
+let versaoRevisao = null;
+
+const definicoesRevisao = [
+  ["numero_nota", "Número da nota"],
+  ["codigo_verificacao", "Código de verificação"],
+  ["data_emissao", "Emissão — AAAA-MM-DDTHH:MM:SS"],
+  ["competencia", "Competência — AAAA-MM"],
+  ["cnpj_prestador", "CNPJ do prestador"],
+  ["nome_prestador", "Nome do prestador"],
+  ["cnpj_tomador", "CNPJ do tomador"],
+  ["nome_tomador", "Nome do tomador"],
+  ["valor_servicos_centavos", "Valor dos serviços (R$)"],
+  ["valor_liquido_centavos", "Valor líquido (R$)"],
+  ["valor_total_nota_centavos", "Valor total da nota (R$)"],
+  ["aliquota_percentual", "Alíquota (%)"],
+  ["valor_iss_centavos", "ISS (R$)"],
+  ["valor_ibs_centavos", "IBS (R$)"],
+  ["valor_cbs_centavos", "CBS (R$)"],
+];
+
+async function abrirRevisao(id) {
+  const secao = document.querySelector("#secao-revisao");
+  const area = document.querySelector("#campos-revisao");
+  const aviso = document.querySelector("#mensagem-revisao");
+
+  // Fecha a revisão anterior enquanto carrega a nova.
+  documentoEmRevisao = null;
+  secao.hidden = true;
+  mensagem.textContent = "Abrindo revisão...";
+
+  try {
+    const resposta = await fetch(`/api/documentos/${id}/revisao`);
+    const resultado = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(resultado.erro || "Erro ao abrir revisão.");
+    }
+
+    documentoEmRevisao = id;
+    versaoRevisao = resultado.versao;
+
+    document.querySelector("#titulo-revisao").textContent =
+      `Revisar: ${resultado.nome_arquivo}`;
+
+    area.replaceChildren();
+
+    for (const [campo, titulo] of definicoesRevisao) {
+      const label = document.createElement("label");
+      label.textContent = titulo;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.name = campo;
+      input.maxLength = 300;
+
+      const valor = resultado.dados[campo];
+
+      if (campo.endsWith("_centavos")) {
+        input.inputMode = "decimal";
+        input.value = valor == null
+          ? ""
+          : (valor / 100).toFixed(2).replace(".", ",");
+      } else {
+        input.value = valor == null ? "" : String(valor);
+      }
+
+      label.appendChild(input);
+      area.appendChild(label);
+    }
+
+    aviso.textContent = "";
+    mensagem.textContent = "Dados carregados para revisão.";
+    secao.hidden = false;
+    secao.scrollIntoView({ behavior: "smooth" });
+  } catch (erro) {
+    mensagem.textContent = erro.message;
+  }
+}
+
+document.querySelector("#form-revisao").addEventListener(
+  "submit",
+  async (evento) => {
+    evento.preventDefault();
+
+    if (!documentoEmRevisao) return;
+
+    const botao = document.querySelector("#salvar-revisao");
+    const aviso = document.querySelector("#mensagem-revisao");
+
+    const campos = Object.fromEntries(
+      new FormData(evento.currentTarget).entries()
+    );
+
+    botao.disabled = true;
+    aviso.textContent = "Salvando...";
+
+    try {
+      const resposta = await fetch(
+        `/api/documentos/${documentoEmRevisao}/revisao`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campos,
+            versao: versaoRevisao,
+          }),
+        }
+      );
+
+      const resultado = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(resultado.erro || "Erro ao salvar revisão.");
+      }
+
+      versaoRevisao = resultado.versao;
+      aviso.textContent = resultado.mensagem;
+
+      try {
+        await carregarDocumentos();
+      } catch {
+        aviso.textContent += " Não foi possível atualizar a lista.";
+      }
+    } catch (erro) {
+      aviso.textContent = erro.message;
+    } finally {
+      botao.disabled = false;
+    }
+  }
+);

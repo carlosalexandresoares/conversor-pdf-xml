@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,13 +16,7 @@
     <p>Selecione um PDF de até 10 MB.</p>
 
     <form id="form-upload">
-      <input
-        type="file"
-        id="pdf"
-        name="pdf"
-        accept=".pdf,application/pdf"
-        required
-      >
+      <input type="file" id="pdf" name="pdf" accept=".pdf,application/pdf" required>
       <button type="submit" id="enviar">Enviar PDF</button>
     </form>
 
@@ -34,14 +29,27 @@
     <ul id="documentos"></ul>
   </section>
   <section>
-  <h2 id="titulo-texto">Texto do documento</h2>
+    <h2 id="titulo-texto">Texto do documento</h2>
 
-  <pre
-    id="texto-documento"
-    style="white-space: pre-wrap; overflow-wrap: anywhere;"
-  >Selecione um documento na lista.</pre>
-</section>
+    <pre id="texto-documento"
+      style="white-space: pre-wrap; overflow-wrap: anywhere;">Selecione um documento na lista.</pre>
+  </section>
+  <section id="secao-revisao" hidden>
+    <h2 id="titulo-revisao">Revisar documento</h2>
 
+    <p>
+      Valores em reais, sem separador de milhares: 5745,84.
+      Deixe vazio quando a informação não estiver disponível.
+    </p>
+
+    <form id="form-revisao">
+      <div id="campos-revisao"></div>
+      <button type="submit" id="salvar-revisao">Salvar revisão</button>
+    </form>
+
+    <p id="mensagem-revisao" role="status"></p>
+  </section>
   <script src="/app.js"></script>
 </body>
+
 </html>
