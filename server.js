@@ -5,6 +5,7 @@ const uploadRouter = require("./upload");
 const leituraRouter = require("./leitura");
 const camposRouter = require("./campos");
 const revisaoRouter = require("./revisao");
+const complementosRouter = require("./complementos");
 
 
 const app = express();
@@ -65,6 +66,7 @@ app.use("/api/documentos/upload", uploadRouter);
 app.use("/api/documentos", leituraRouter);
 app.use("/api/documentos", camposRouter);
 app.use("/api/documentos", revisaoRouter);
+app.use("/api/documentos", complementosRouter);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Sistema disponível em http://localhost:${PORT}`);

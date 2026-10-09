@@ -64,6 +64,35 @@ async function carregarDocumentos() {
 
     item.append(" ", botaoCampos);
 
+    const botaoComplementos = document.createElement("button");
+    botaoComplementos.type = "button";
+    botaoComplementos.textContent = "Incluir complementos";
+
+    botaoComplementos.addEventListener("click", async () => {
+      botaoComplementos.disabled = true;
+
+      try {
+        const resposta = await fetch(
+          `/api/documentos/${documento.id}/complementos`,
+          { method: "POST" }
+        );
+
+        const resultado = await resposta.json();
+
+        if (!resposta.ok) {
+          throw new Error(resultado.erro || "Erro ao incluir complementos.");
+        }
+
+        mensagem.textContent = resultado.mensagem;
+      } catch (erro) {
+        mensagem.textContent = erro.message;
+      } finally {
+        botaoComplementos.disabled = false;
+      }
+    });
+
+    item.append(" ", botaoComplementos);
+
     lista.appendChild(item);
   }
 }
@@ -212,6 +241,14 @@ const definicoesRevisao = [
   ["valor_iss_centavos", "ISS (R$)"],
   ["valor_ibs_centavos", "IBS (R$)"],
   ["valor_cbs_centavos", "CBS (R$)"],
+  ["rps_numero", "Número do RPS"],
+  ["rps_serie", "Série do RPS"],
+  ["rps_tipo", "Tipo do RPS"],
+  ["rps_data", "Data do RPS — AAAA-MM-DD"],
+  ["codigo_servico_municipal", "Código municipal do serviço"],
+  ["item_lista_servico", "Item da lista de serviços"],
+  ["descricao_servico", "Descrição do serviço"],
+  ["discriminacao_servicos", "Discriminação e informações relevantes"],
 ];
 
 async function abrirRevisao(id) {
@@ -244,10 +281,23 @@ async function abrirRevisao(id) {
       const label = document.createElement("label");
       label.textContent = titulo;
 
-      const input = document.createElement("input");
-      input.type = "text";
+      const campoLongo = [
+        "descricao_servico",
+        "discriminacao_servicos",
+      ].includes(campo);
+
+      const input = document.createElement(
+        campoLongo ? "textarea" : "input"
+      );
+
+      if (campoLongo) {
+        input.rows = 5;
+      } else {
+        input.type = "text";
+      }
+
       input.name = campo;
-      input.maxLength = 300;
+      input.maxLength = campoLongo ? 10000 : 300;
 
       const valor = resultado.dados[campo];
 

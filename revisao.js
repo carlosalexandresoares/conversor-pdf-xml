@@ -12,6 +12,14 @@ const camposTexto = [
   "nome_prestador",
   "cnpj_tomador",
   "nome_tomador",
+  "rps_numero",
+  "rps_serie",
+  "rps_tipo",
+  "rps_data",
+  "codigo_servico_municipal",
+  "item_lista_servico",
+  "descricao_servico",
+  "discriminacao_servicos",
 ];
 
 const camposDinheiro = [
@@ -135,7 +143,12 @@ router.put("/:id/revisao", (req, res) => {
 
         const valor = entrada[campo].trim();
 
-        if (valor.length > 300) {
+        const limite = [
+          "descricao_servico",
+          "discriminacao_servicos",
+        ].includes(campo) ? 10000 : 300;
+        
+        if (valor.length > limite) {
           throw new Error(`Campo muito longo: ${campo}.`);
         }
 
@@ -153,7 +166,7 @@ router.put("/:id/revisao", (req, res) => {
       }
 
       if (dados.competencia &&
-          !/^\d{4}-(0[1-9]|1[0-2])$/.test(dados.competencia)) {
+        !/^\d{4}-(0[1-9]|1[0-2])$/.test(dados.competencia)) {
         throw new Error("Use a competência no formato AAAA-MM.");
       }
 
