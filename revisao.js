@@ -207,6 +207,64 @@ router.put("/:id/revisao", (req, res) => {
         }
       }
 
+      const ufsValidas = new Set([
+        "AC", "AL", "AP", "AM", "BA", "CE", "DF",
+        "ES", "GO", "MA", "MT", "MS", "MG", "PA",
+        "PB", "PR", "PE", "PI", "RJ", "RN", "RS",
+        "RO", "RR", "SC", "SP", "SE", "TO",
+      ]);
+
+      for (const pessoa of ["prestador", "tomador"]) {
+        const campoCep = `${pessoa}_cep`;
+        const campoUf = `${pessoa}_uf`;
+        const campoEmail = `${pessoa}_email`;
+
+        if (dados[campoCep]) {
+          const cep = dados[campoCep].replace(/[-\s]/g, "");
+
+          if (!/^\d{8}$/.test(cep)) {
+            throw new Error(`O CEP do ${pessoa} deve ter 8 dígitos.`);
+          }
+
+          dados[campoCep] = cep;
+        }
+
+        if (dados[campoUf]) {
+          const uf = dados[campoUf].toUpperCase();
+
+          if (!ufsValidas.has(uf)) {
+            throw new Error(`A UF do ${pessoa} é inválida.`);
+          }
+
+          dados[campoUf] = uf;
+        }
+
+        if (
+          dados[campoEmail] &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados[campoEmail])
+        ) {
+          throw new Error(`O e-mail do ${pessoa} está em formato inválido.`);
+        }
+      }
+
+      // Valida a data do RPS quando preenchida.
+      if (dados.rps_data) {
+        const data = dados.rps_data;
+
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+          throw new Error("Use a data do RPS no formato AAAA-MM-DD.");
+        }
+
+        const instante = new Date(`${data}T00:00:00Z`);
+
+        if (
+          Number.isNaN(instante.getTime()) ||
+          instante.toISOString().slice(0, 10) !== data
+        ) {
+          throw new Error("A data do RPS é inválida.");
+        }
+      }
+
       for (const campo of camposDinheiro) {
         dados[campo] = converterDinheiro(entrada[campo], campo);
       }
