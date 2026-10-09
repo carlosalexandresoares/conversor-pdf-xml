@@ -223,7 +223,11 @@ async function identificarCampos(id, botao) {
 }
 
 let documentoEmRevisao = null;
+
+
 let versaoRevisao = null;
+
+
 
 const definicoesRevisao = [
   ["numero_nota", "Número da nota"],
@@ -250,6 +254,11 @@ const definicoesRevisao = [
   ["descricao_servico", "Descrição do serviço"],
   ["discriminacao_servicos", "Discriminação e informações relevantes"],
 ];
+
+definicoesRevisao.push(
+  ["codigo_municipio_prestacao", "Prestação — Código IBGE"],
+  ["codigo_municipio_incidencia", "Incidência do ISS — Código IBGE"]
+);
 
 definicoesRevisao.push(
   ["base_calculo_centavos", "Base de cálculo (R$)"],
@@ -341,10 +350,14 @@ async function abrirRevisao(id) {
       }
 
       input.name = campo;
-      if (campo.endsWith("_codigo_municipio")) {
+      if (
+  campo.endsWith("_codigo_municipio") ||
+  campo.startsWith("codigo_municipio_")
+) {
         input.readOnly = true;
         input.placeholder = "Município ainda não cadastrado";
       }
+      
       input.maxLength = campoLongo ? 10000 : 300;
 
       const valor = resultado.dados[campo];

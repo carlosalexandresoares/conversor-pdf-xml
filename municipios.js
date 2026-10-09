@@ -15,15 +15,34 @@ function normalizar(valor) {
 }
 
 function preencherCodigosMunicipios(dados) {
-  for (const pessoa of ["prestador", "tomador"]) {
-    const nome = normalizar(dados[`${pessoa}_municipio`]);
-    const uf = normalizar(dados[`${pessoa}_uf`]);
-    const chave = `${uf}|${nome}`;
+  const grupos = [
+    {
+      municipio: "prestador_municipio",
+      uf: "prestador_uf",
+      codigo: "prestador_codigo_municipio",
+    },
+    {
+      municipio: "tomador_municipio",
+      uf: "tomador_uf",
+      codigo: "tomador_codigo_municipio",
+    },
+    {
+      municipio: "municipio_prestacao",
+      uf: "uf_prestacao",
+      codigo: "codigo_municipio_prestacao",
+    },
+    {
+      municipio: "municipio_incidencia",
+      uf: "uf_incidencia",
+      codigo: "codigo_municipio_incidencia",
+    },
+  ];
 
-    // Recalcula para não manter um código antigo
-    // quando o usuário alterar o município ou a UF.
-    dados[`${pessoa}_codigo_municipio`] =
-      municipios[chave] || null;
+  for (const grupo of grupos) {
+    const nome = normalizar(dados[grupo.municipio]);
+    const uf = normalizar(dados[grupo.uf]);
+
+    dados[grupo.codigo] = municipios[`${uf}|${nome}`] || null;
   }
 
   return dados;
