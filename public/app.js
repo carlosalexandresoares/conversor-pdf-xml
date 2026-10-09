@@ -250,6 +250,12 @@ const definicoesRevisao = [
   ["descricao_servico", "Descrição do serviço"],
   ["discriminacao_servicos", "Discriminação e informações relevantes"],
 ];
+
+definicoesRevisao.push(
+  ["prestador_codigo_municipio", "Prestador — Código IBGE"],
+  ["tomador_codigo_municipio", "Tomador — Código IBGE"]
+);
+
 const camposEndereco = [
   ["endereco", "Endereço"],
   ["numero", "Número"],
@@ -321,6 +327,10 @@ async function abrirRevisao(id) {
       }
 
       input.name = campo;
+      if (campo.endsWith("_codigo_municipio")) {
+        input.readOnly = true;
+        input.placeholder = "Município ainda não cadastrado";
+      }
       input.maxLength = campoLongo ? 10000 : 300;
 
       const valor = resultado.dados[campo];

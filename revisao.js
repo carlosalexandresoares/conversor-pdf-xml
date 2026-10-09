@@ -1,4 +1,5 @@
 const express = require("express");
+const { preencherCodigosMunicipios } = require("./municipios");
 const db = require("./database");
 
 const router = express.Router();
@@ -100,7 +101,7 @@ router.get("/:id/revisao", (req, res) => {
     }
 
     const dados = JSON.parse(documento.dados_json);
-
+    preencherCodigosMunicipios(dados);
     if (!dados.modelo) {
       return res.status(400).json({
         erro: 'Clique primeiro em "Identificar campos".',
@@ -306,7 +307,10 @@ router.put("/:id/revisao", (req, res) => {
       "valor_servicos_centavos",
     ].filter((campo) => dados[campo] == null);
 
+    preencherCodigosMunicipios(dados);
+
     dados.revisado_em = new Date().toISOString();
+    
     const novoJson = JSON.stringify(dados);
 
     const resultado = db.prepare(`
