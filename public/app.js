@@ -44,6 +44,17 @@ async function carregarDocumentos() {
   });
 
   item.append(descricao, botaoLer, " ", botaoConsultar);
+
+  const botaoCampos = document.createElement("button");
+botaoCampos.type = "button";
+botaoCampos.textContent = "Identificar campos";
+
+botaoCampos.addEventListener("click", () => {
+  identificarCampos(documento.id, botaoCampos);
+});
+
+item.append(" ", botaoCampos);
+
   lista.appendChild(item);
 }
 }
@@ -137,6 +148,36 @@ async function abrirTexto(id, extrair, botao) {
       : "Consulta concluída.";
   } catch (erro) {
     areaTexto.textContent = erro.message;
+    mensagem.textContent = erro.message;
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+async function identificarCampos(id, botao) {
+  botao.disabled = true;
+  mensagem.textContent = "Identificando os campos...";
+
+  try {
+    const resposta = await fetch(
+      `/api/documentos/${id}/identificar-campos`,
+      { method: "POST" }
+    );
+
+    const resultado = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(resultado.erro || "Falha ao identificar campos.");
+    }
+
+    document.querySelector("#titulo-texto").textContent =
+      `Campos identificados — Documento #${id}`;
+
+    document.querySelector("#texto-documento").textContent =
+      JSON.stringify(resultado.dados, null, 2);
+
+    mensagem.textContent = resultado.mensagem;
+  } catch (erro) {
     mensagem.textContent = erro.message;
   } finally {
     botao.disabled = false;
