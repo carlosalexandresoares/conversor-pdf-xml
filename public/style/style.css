@@ -12,3 +12,45 @@ dialog{padding:0;border:1px solid var(--line);border-radius:14px;width:min(1400p
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 
 @media(max-width:850px){.review-layout{display:flex;flex-direction:column}.pdf-pane{display:block;flex:0 0 auto}.pdf-pane iframe{display:none}.review-pane{flex:1;min-height:0}}
+
+.site-footer {
+  max-width: 1510px;
+  margin: 0 auto;
+  padding: 0 42px 28px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.site-footer__content {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.site-footer strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.site-footer small {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  color: #9ba8b5;
+}
+
+/* RESPONSIVIDADE */
+
+@media (max-width: 850px) {
+  .site-footer {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+}
+
+@media (max-width: 550px) {
+  .site-footer {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+}
