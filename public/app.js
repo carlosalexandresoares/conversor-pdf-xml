@@ -2,6 +2,7 @@
 const $=s=>document.querySelector(s);
 let documentos=[],selecionados=new Set(),pagina=1,arquivos=[],enviando=false,baixando=false,revisao=null,alterado=false,salvando=false,carregando=false;
 let definicoes=[];
+let excluindo=false;
 const tamanhoPagina=25;
 const formatoMoeda=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const dataCurta=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR');};
@@ -40,8 +41,12 @@ function filtrados(){
 }
 function atualizarAcoes(){
   const n=selecionados.size;
-  $('#revisar-selecionado').disabled=n!==1||baixando;
-  $('#baixar-selecionado').disabled=!n||baixando;
+  $('#revisar-selecionado').disabled=n!==1||baixando||excluindo;
+  $('#baixar-selecionado').disabled=!n||baixando||excluindo;
+  const emLeitura=documentos.some(d=>selecionados.has(d.id)&&['fila','processando'].includes(d.processamento));
+  $('#excluir-selecionado').disabled=!n||baixando||excluindo||emLeitura;
+  $('#excluir-selecionado').textContent=excluindo?'Excluindo…':n>1?`Excluir (${n})`:'Excluir';
+  $('#excluir-selecionado').title=emLeitura?'Aguarde a leitura dos documentos selecionados terminar.':'';
   $('#baixar-selecionado').textContent=baixando?'Preparando…':n>1?`Baixar XMLs (${n})`:'Baixar XML';
   $('#selecao-info').textContent=n?`${n} documento${n>1?'s':''} selecionado${n>1?'s':''}${n>1?' • Download em ZIP. Selecione apenas um para revisar.':''}`:'Selecione documentos para começar.';
   const ids=filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina).map(d=>d.id);
@@ -83,6 +88,10 @@ async function carregar(){
     const novos=await json('/api/documentos');const mudou=JSON.stringify(novos)!==JSON.stringify(documentos);
     documentos=novos;selecionados=new Set([...selecionados].filter(id=>documentos.some(d=>d.id===id)));
     if(mudou||!$('#contagem').textContent)renderizar();$('#conexao').textContent='● Servidor conectado';$('#conexao').classList.remove('offline');
+    if(revisao && ['fila','processando'].includes(revisao.processamento) && !alterado && !salvando){
+      const atual=documentos.find(d=>d.id===revisao.id);
+      if(atual && !['fila','processando'].includes(atual.processamento))await abrirRevisao(atual.id,true);
+    }
   }catch(erro){$('#conexao').textContent='● Sem conexão';$('#conexao').classList.add('offline');notificar(erro.message,true);}
   finally{carregando=false;}
 }
@@ -119,6 +128,21 @@ $('#form-upload').addEventListener('submit',async e=>{
   }
   enviando=false;$('#enviar').disabled=false;$('#enviar').textContent='Importar arquivos';$('#pdf').disabled=false;$('#pdf').value='';arquivos=[];$('#upload-actions').hidden=true;
   notificar(`Lote concluído: ${salvos} novo(s), ${duplicados} já cadastrado(s), ${falhas} falha(s). A leitura continua no servidor.`,falhas>0);
+});
+$('#excluir-selecionado').addEventListener('click',async()=>{
+  if(excluindo||baixando||!selecionados.size)return;
+  const ids=[...selecionados];
+  const nomes=documentos.filter(d=>selecionados.has(d.id)).map(d=>d.nome_arquivo);
+  if(!confirm(`Excluir permanentemente ${ids.length} documento(s)?\n\n${nomes.slice(0,5).join('\n')}${nomes.length>5?'\n…':''}\n\nOs PDFs armazenados e os dados de revisão serão removidos. Esta ação não pode ser desfeita.`))return;
+  excluindo=true;atualizarAcoes();let removidos=0;const falhas=[];
+  try {
+    for(const id of ids){
+      try {await json(`/api/documentos/${id}`,{method:'DELETE'});selecionados.delete(id);removidos++;}
+      catch(erro){falhas.push(`#${id}: ${erro.message}`);}
+    }
+    await carregar();
+    notificar(`${removidos} documento(s) excluído(s).${falhas.length?'\n'+falhas.join('\n'):''}`,falhas.length>0);
+  } finally {excluindo=false;atualizarAcoes();}
 });
 async function salvarDownload(resposta,nome){
   const blob=await resposta.blob();const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download=nome;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
@@ -161,20 +185,24 @@ function renderizarCampos(dados){
     grupos.get(nomeGrupo).append(label);
   }
 }
-async function abrirRevisao(id){
+async function abrirRevisao(id,atualizacao=false){
   if(!definicoes.length)definicoes=await json('/campos.json');
-  const resultado=await json(`/api/documentos/${id}/revisao`);revisao=resultado;alterado=false;
+  const resultado=await json(`/api/documentos/${id}/revisao`);
+  if(atualizacao && (!revisao || revisao.id!==id || alterado || !$('#revisao-dialog').open))return;
+  revisao=resultado;alterado=false;
   $('#titulo-revisao').textContent=resultado.nome_arquivo;
   $('#preview-pdf').src=`/visualizar.html?id=${id}`;
   $('#abrir-pdf').href=`/api/documentos/${id}/pdf`;
   $('#texto-extraido').textContent=resultado.texto_extraido||'Nenhum texto extraído. Você pode preencher os campos manualmente usando o PDF original.';
   const avisos=[...(resultado.dados.avisos||[])];
   if(resultado.erro_processamento)avisos.unshift(resultado.erro_processamento);
-  if(['fila','processando'].includes(resultado.processamento))avisos.unshift('A leitura está em andamento. Feche e reabra esta revisão quando terminar.');
+  const processando=['fila','processando'].includes(resultado.processamento);
+  if(processando)avisos.unshift('A leitura está em andamento. Os campos serão preenchidos automaticamente quando terminar.');
   $('#aviso-revisao').textContent=avisos.join('\n');$('#aviso-revisao').hidden=!avisos.length;
   $('#salvar-revisao').disabled=['fila','processando'].includes(resultado.processamento);
-  $('#tentar-leitura').hidden=resultado.processamento!=='erro'||!!resultado.dados.revisado_em;
+  $('#tentar-leitura').hidden=processando||!!resultado.dados.revisado_em;
   $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);trocarAba(false);
+  for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando;
   if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
 }
 $('#revisar-selecionado').addEventListener('click',async()=>{

@@ -1,7 +1,7 @@
-// Conservative label-based fallback. Unknown layouts remain reviewable.
+const { prepararLayout } = require('./layout-texto');
 const normalizar = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function extrairGenerico(original) {
-  const texto = original.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
+  const texto = prepararLayout(original.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' '));
   const dados = { modelo: 'generico' }, origens = {}, avisos = [];
   function buscar(campo, fonte, expressao, converter = v => v.trim()) {
     const encontrados = [...normalizar(fonte).matchAll(new RegExp(expressao, 'gim'))];
@@ -13,12 +13,12 @@ function extrairGenerico(original) {
     if (unicos.length === 1) { dados[campo] = unicos[0]; origens[campo] = { metodo: 'rotulo', trecho: valores[0].trecho }; }
     else if (unicos.length > 1) avisos.push(`Há valores diferentes para ${campo}; confira o PDF.`);
   }
-  const sep = '[ \\t]*:?[ \\t]*(?:\\n[ \\t]*)?';
+  const sep = '[ \\t]*(?:\\(r\\$\\)|\\(%\\))?[ \\t]*:?[ \\t]*(?:\\n[ \\t]*)?';
   const dinheiro = v => { const n = Number(v.replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) && Number.isSafeInteger(Math.round(n*100)) ? Math.round(n*100) : null; };
   const moeda = '(?:r\\$[ \\t]*)?([0-9]+(?:\\.[0-9]{3})*,[0-9]{2})(?![0-9])';
-  buscar('numero_nota', texto, '(?:^|\\n)[ \\t]*(?:numero (?:da |de )?(?:nota|nfs-e)|nfs-e (?:n[oº°.]|numero)|nota fiscal (?:de servicos )?(?:n[oº°.]|numero))'+sep+'([0-9]+)\\b');
+  buscar('numero_nota', texto, '(?:^|\\n)[ \\t]*(?:(?:numero|n[º°o.]*) (?:da |de )?(?:nota(?: fiscal)?|nfs-?e)|nfs-e (?:n[oº°.]|numero)|nota fiscal (?:de servicos )?(?:n[oº°.]|numero))'+sep+'([0-9]+)\\b');
   buscar('codigo_verificacao', texto, '(?:codigo (?:de )?(?:verificacao|autenticidade))'+sep+'([a-z0-9][a-z0-9.\\-]{3,50})\\b');
-  buscar('data_emissao', texto, '(?:data (?:e hora )?(?:de )?emissao|emissao da nfs-e)'+sep+'(\\d{2}/\\d{2}/\\d{4}(?:[ \\t]+\\d{2}:\\d{2}(?::\\d{2})?)?)', v => {
+  buscar('data_emissao', texto, '(?:data (?:e hora )?(?:de )?emissao(?: da nfs-e)?|emissao da nfs-e)'+sep+'(\\d{2}/\\d{2}/\\d{4}(?:[ \\t]+\\d{2}:\\d{2}(?::\\d{2})?)?)', v => {
     const m=v.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
     const data=`${m[3]}-${m[2]}-${m[1]}`; const t=new Date(data+'T00:00:00Z');
     return !Number.isNaN(t.getTime()) && t.toISOString().slice(0,10)===data ? data+(m[4]?'T'+m[4]+(m[4].length===5?':00':''):'') : null;
@@ -40,12 +40,12 @@ function extrairGenerico(original) {
   buscar('rps_serie',texto,'serie (?:do )?rps'+sep+'([a-z0-9-]+)');
   // No CNPJ is assigned by its position on the page: the party heading must exist.
   for (const pessoa of ['prestador','tomador']) {
-    const heading=new RegExp('(?:^|\\n)[ \\t]*(?:dados (?:do )?)?'+pessoa+'(?: (?:de |dos? )?servicos?)?[ \\t]*:?[^\\n]*\\n','im');
+    const heading=new RegExp('(?:^|\\n)[ \\t]*(?:(?:dados|identificacao) (?:do )?)?'+(pessoa==='prestador'?'(?:prestador|emitente)':'tomador')+'(?: (?:de |dos? )?servicos?)?(?: da nfs-e)?[ \\t]*:?[ \\t]*(?:\\n|$)','im');
     const m=normalizar(texto).match(heading); if(!m) continue;
     let bloco=texto.slice(m.index + m[0].length);
-    const fim=normalizar(bloco).search(/(?:^|\n)[ \t]*(?:(?:dados (?:do )?)?(?:prestador|tomador|intermediario)|discriminacao|descricao dos servicos|valores da nota|atividade economica)/i);
+    const fim=normalizar(bloco).search(/(?:^|\n)[ \t]*(?:(?:(?:dados|identificacao) (?:do )?)?(?:prestador|emitente|tomador|intermediario)|discriminacao|descricao dos servicos|valores da nota|atividade economica|servico prestado|tributacao)/i);
     if(fim>=0) bloco=bloco.slice(0,fim);
-    buscar('cnpj_'+pessoa,bloco,'(?:cpf/cnpj|cnpj/cpf|cnpj|cpf)'+sep+'([\\d./-]{11,18})(?![\\d./-])',v=>{v=v.replace(/\D/g,'');return [11,14].includes(v.length)?v:null});
+    buscar('cnpj_'+pessoa,bloco,'(?:cpf\\s*/\\s*cnpj|cnpj\\s*/\\s*cpf|cnpj|cpf)'+sep+'([\\d./-]{11,18})(?![\\d./-])',v=>{v=v.replace(/\D/g,'');return [11,14].includes(v.length)?v:null});
     buscar('nome_'+pessoa,bloco,'(?:nome/razao social|razao social|nome)'+sep+'([^\\n:]{2,180})(?=\\n|$)');
     for(const [campo,rotulo] of Object.entries({endereco:'endereco|logradouro',bairro:'bairro',municipio:'municipio|cidade',complemento:'complemento'})) buscar(pessoa+'_'+campo,bloco,'(?:^|\\n)[ \\t]*(?:'+rotulo+')'+sep+'([^\\n:]{1,180})(?=\\n|$)');
     buscar(pessoa+'_numero',bloco,'(?:^|\\n)[ \\t]*numero'+sep+'([0-9]+|s/?n)\\b');
@@ -53,6 +53,8 @@ function extrairGenerico(original) {
     buscar(pessoa+'_uf',bloco,'\\buf'+sep+'([a-z]{2})\\b',v=>v.toUpperCase());
     buscar(pessoa+'_inscricao_municipal',bloco,'inscricao municipal'+sep+'([a-z0-9./-]+)');
     buscar(pessoa+'_email',bloco,'e-?mail'+sep+'([^\\s@]+@[^\\s@]+\\.[^\\s@]+)');
+    const cidade=bloco.match(/(?:Munic[ií]pio(?:\s*\/\s*UF)?|Cidade)\s*:?\s*([^\n:]+?)\s*[-/]\s*([A-Z]{2})\b/i);
+    if(cidade) {dados[pessoa+'_municipio']=cidade[1].trim();dados[pessoa+'_uf']=cidade[2].toUpperCase();}
   }
   const descricao = texto.match(/(?:discrimina[çc][ãa]o (?:dos? )?servi[çc]os|descri[çc][ãa]o dos servi[çc]os)[ \t]*:?\s*\n([\s\S]*?)(?=\n(?:VALOR|RETEN|OUTRAS INFORMA|TRIBUT)|$)/i);
   if(descricao) dados.discriminacao_servicos=descricao[1].trim().slice(0,10000);

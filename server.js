@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('node:path');
+const fs = require('node:fs');
 const db = require('./database');
 const { retomar, enfileirar, caminhoPdf } = require('./processamento');
 const app = express();
@@ -19,6 +20,21 @@ app.get('/api/documentos', (req, res) => {
   res.json(documentos.map(({ dados_json, ...doc }) => { const d = JSON.parse(dados_json || '{}'); return { ...doc, revisado_em: d.revisado_em || null, avisos: d.avisos || [], metodo_leitura: d.metodo_leitura || null }; }));
 });
 app.use('/api/documentos/upload', require('./upload'));
+app.delete('/api/documentos/:id', (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ erro: 'ID inválido.' });
+  try {
+    const doc = db.prepare('SELECT * FROM documentos WHERE id=?').get(id);
+    if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+    if (['fila', 'processando'].includes(doc.processamento)) return res.status(409).json({ erro: 'Aguarde a leitura terminar antes de excluir este documento.' });
+    if (doc.caminho_pdf) {
+      try { fs.unlinkSync(caminhoPdf(doc)); }
+      catch (erro) { if (erro.code !== 'ENOENT') throw erro; }
+    }
+    db.prepare('DELETE FROM documentos WHERE id=?').run(id);
+    res.json({ mensagem: 'Documento e PDF excluídos.', id });
+  } catch (erro) { next(erro); }
+});
 app.post('/api/documentos/:id/processar', (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ erro: 'ID inválido.' });

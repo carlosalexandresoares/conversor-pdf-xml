@@ -53,4 +53,4 @@ dialog{padding:0;border:1px solid var(--line);border-radius:14px;width:min(1400p
     padding-right: 18px;
     padding-left: 18px;
   }
-}
+}.btn.danger{background:#fff;border-color:#edc9c9;color:#aa3636}.btn.danger:hover:not(:disabled){background:#fff1f1}

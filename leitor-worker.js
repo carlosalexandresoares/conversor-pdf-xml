@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const { PDFParse } = require('pdf-parse');
+const { extrairGenerico } = require('./extrator-generico');
 process.on('message', async ({caminho}) => {
   let parser, ocr;
   const avisos=[];
@@ -12,7 +13,9 @@ process.on('message', async ({caminho}) => {
     let usouOcr=false, paginasOcr=0;
     for (let i=0;i<resultado.pages.length;i++) {
       let texto=resultado.pages[i].text.trim();
-      if(texto.replace(/\s/g,'').length<40) {
+      const campos=extrairGenerico(texto).dados;
+      const temDados=['numero_nota','cnpj_prestador','cnpj_tomador','valor_servicos_centavos'].some(c=>campos[c]!=null);
+      if(texto.replace(/\s/g,'').length<40 || !temDados) {
         if(++paginasOcr>20) { avisos.push(`Página ${i+1} sem OCR: limite de 20 páginas digitalizadas por arquivo.`); paginas.push(texto); continue; }
         try {
           if(!ocr) {
@@ -22,7 +25,12 @@ process.on('message', async ({caminho}) => {
           }
           const imagem=await parser.getScreenshot({partial:[i+1],desiredWidth:1800,imageDataUrl:false,imageBuffer:true});
           const reconhecimento=await ocr.recognize(imagem.pages[0].data);
-          if(reconhecimento.data.text.trim()) {texto=reconhecimento.data.text.trim();usouOcr=true;}
+          if(reconhecimento.data.text.trim()) {
+            // Keep the native text if OCR found less information.
+            const novo=reconhecimento.data.text.trim();
+            const contar=t=>Object.keys(extrairGenerico(t).dados).length;
+            if(contar(novo)>=contar(texto) || texto.replace(/\s/g,'').length<40) {texto=novo;usouOcr=true;}
+          }
           if(reconhecimento.data.confidence<70) avisos.push(`OCR da página ${i+1} tem baixa confiança; confira com o original.`);
         } catch(erro) {avisos.push(`Não foi possível aplicar OCR à página ${i+1}. Revise o PDF e preencha os campos manualmente.`);}
       }

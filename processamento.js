@@ -4,6 +4,7 @@ const db=require('./database');
 const {extrairCampos}=require('./extrator');
 const {extrairComplementos}=require('./extrator-complementos');
 const {extrairGenerico}=require('./extrator-generico');
+const {extrairDanfse}=require('./extrator-danfse');
 const {preencherCodigosMunicipios}=require('./municipios');
 const pastaUploads=process.env.CONVERSOR_UPLOAD_DIR || path.join(__dirname,'uploads');
 const fila=[]; const ativos=new Set(); let trabalhando=false;
@@ -33,7 +34,7 @@ function interpretar(texto) {
   const generico=extrairGenerico(texto);
   let dados={...generico.dados},origens={...generico.origens};
   try {
-    const conhecido={...extrairCampos(texto),...extrairComplementos(texto)};
+    const conhecido=extrairDanfse(texto)||{...extrairCampos(texto),...extrairComplementos(texto)};
     for(const [campo,valor] of Object.entries(conhecido)) if(valor!=null) {dados[campo]=valor;origens[campo]={metodo:'layout '+conhecido.modelo};}
   } catch(erro) { if(!/Layout ainda/.test(erro.message)) generico.avisos.push('Adaptador específico indisponível; usada leitura por rótulos.'); }
   if(dados.modelo==='generico') generico.avisos.push('Layout sem adaptador específico. Os campos encontrados por rótulo precisam de conferência.');
@@ -55,9 +56,9 @@ async function consumir() {
         db.prepare("UPDATE documentos SET processamento='processando',erro_processamento=NULL WHERE id=?").run(id);
         const leitura=await lerPdf(caminhoPdf(doc));
         const extraido=interpretar(leitura.texto);
-        // Preserve already stored values; explicit edits are never re-extracted.
+        // Reviewed documents are excluded above. Retry must replace stale extraction.
         const dados={...extraido};
-        for(const [campo,valor] of Object.entries(anterior)) if(valor!=null && valor!=='') dados[campo]=valor;
+        for(const [campo,origem] of Object.entries(anterior.origens||{})) if(origem.metodo==='revisão manual') dados[campo]=anterior[campo];
         dados.avisos=[...new Set([...extraido.avisos,...leitura.avisos])];
         dados.metodo_leitura=leitura.metodo;dados.paginas=leitura.paginas;
         dados.campos_nao_encontrados=['numero_nota','data_emissao','cnpj_prestador','cnpj_tomador','valor_servicos_centavos'].filter(c=>dados[c]==null);

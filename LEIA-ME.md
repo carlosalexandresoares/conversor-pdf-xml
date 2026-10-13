@@ -28,13 +28,14 @@ Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige in
 - Marque vários documentos e use **Baixar XMLs**. O ZIP contém um XML por registro e `relatorio-exportacao.txt`.
 - A seleção pode abranger várias páginas e permanece ao filtrar; o contador indica o total. A caixa no cabeçalho seleciona somente a página visível. Máximo de 100 documentos por exportação.
 - A revisão protege contra sobrescrita por outro computador. Ao receber conflito, feche e reabra a revisão para carregar a versão atual.
-- Dados revisados não são reextraídos automaticamente. Uma leitura com falha permite tentativa adicional dentro da revisão, desde que ainda não haja revisão salva.
+- Ao abrir a revisão durante a leitura, os campos aguardam o processamento e são preenchidos automaticamente, sem fechar a janela.
+- Dados revisados não são reextraídos automaticamente. O botão **Tentar leitura novamente** fica disponível nos documentos sem revisão salva, inclusive quando uma leitura anterior terminou com campos vazios. A nova leitura substitui a extração anterior.
 - Valores inexistentes ficam vazios. Zero só é exportado quando estiver efetivamente armazenado como zero. As datas não recebem dias arbitrários.
 - Os valores fictícios preenchidos nos testes antigos continuam no banco: apague-os e salve a revisão antes de usar o XML.
 
 ## Cobertura real e limites
 
-O sistema aceita PDFs independentemente do município ou organização visual, mas isso não significa extração perfeita de todo layout. Há adaptadores específicos para os exemplos de Barueri e Santos, uma extração conservadora por rótulos para os demais e OCR local em português nas páginas com pouco texto. Campos conflitantes ou não identificados precisam de revisão. PDFs com senha devem ser desbloqueados antes do envio. Arquivos ilegíveis ou danificados permanecem cadastrados com a descrição do erro e permitem revisão manual.
+O sistema aceita PDFs independentemente do município ou organização visual, mas isso não significa extração perfeita de todo layout. Há adaptadores específicos para os exemplos de Barueri e Santos e extração por rótulos para os demais, incluindo campos lado a lado, títulos em colunas com valores na linha seguinte e sequências de títulos seguidas dos valores. O extrator reconhece emitente/prestador, tomador e município com UF. O OCR local em português é tentado nas páginas com pouco texto ou sem identificação dos campos principais, inclusive páginas com cabeçalho textual e conteúdo digitalizado. Campos conflitantes ou não identificados precisam de revisão. PDFs com senha devem ser desbloqueados antes do envio. Arquivos ilegíveis ou danificados permanecem cadastrados com a descrição do erro e permitem revisão manual.
 
 Limites por PDF: 20 MB, 50 páginas, até 20 páginas submetidas ao OCR e 180 segundos por leitura. Documentos além desses limites devem ser divididos. O OCR pode errar caracteres e valores. Páginas mistas com texto e imagens podem exigir conferência adicional.
 

@@ -22,6 +22,37 @@ test('Extração conservadora não escolhe números conflitantes nem presume val
  assert.ok(gerarXml({cnpj_tomador:'12345678909',nome_tomador:'A & B <C>',valor_servicos_centavos:0}).includes('<Cpf>12345678909</Cpf>'));
  assert.ok(gerarXml({nome_tomador:'A & B <C>'}).includes('A &amp; B &lt;C&gt;'));
 });
+test('NFS-e de outro município com campos lado a lado e cidade/UF',()=>{
+ const d=interpretar('Prefeitura de Curitiba\nNúmero da NFS-e: 827\nData e Hora de Emissão: 13/10/2026 09:30\nEMITENTE DA NFS-e\nCNPJ: 12.345.678/0001-90  Razão Social: Empresa Exemplo\nMunicípio: Curitiba / PR\nTOMADOR DO SERVIÇO\nCPF: 123.456.789-09  Nome: Cliente Exemplo\nMunicípio: São Paulo - SP\nValor dos Serviços: 1.234,56  Valor Líquido: 1.200,00');
+ assert.equal(d.numero_nota,'827');assert.equal(d.data_emissao,'2026-10-13T09:30:00');
+ assert.equal(d.cnpj_prestador,'12345678000190');assert.equal(d.nome_prestador,'Empresa Exemplo');
+ assert.equal(d.cnpj_tomador,'12345678909');assert.equal(d.nome_tomador,'Cliente Exemplo');
+ assert.equal(d.prestador_codigo_municipio,'4106902');assert.equal(d.tomador_codigo_municipio,'3550308');
+ assert.equal(d.valor_servicos_centavos,123456);assert.equal(d.valor_liquido_centavos,120000);
+});
+test('Cabeçalhos em colunas e valores na linha seguinte',()=>{
+ const d=interpretar('Número da Nota\tData de Emissão\tCódigo de Verificação\n765\t13/10/2026\tABCD1234\nPRESTADOR DE SERVIÇOS\nCNPJ\tRazão Social\n12.345.678/0001-90\tEmpresa Colunas\nTOMADOR DE SERVIÇOS\nCPF/CNPJ\nNome/Razão Social\nEndereço\n123.456.789-09\nCliente Colunas\nRua Exemplo, 10\nValor dos Serviços\tBase de Cálculo\tISSQN\n2.000,00\t2.000,00\t100,00');
+ assert.equal(d.numero_nota,'765');assert.equal(d.codigo_verificacao,'ABCD1234');
+ assert.equal(d.nome_prestador,'Empresa Colunas');assert.equal(d.nome_tomador,'Cliente Colunas');
+ assert.equal(d.tomador_endereco,'Rua Exemplo, 10');assert.equal(d.valor_servicos_centavos,200000);assert.equal(d.valor_iss_centavos,10000);
+});
+test('Exclusão remove PDF e revisão, valida ID e protege documentos em leitura',async()=>{
+ const nome='exclusao-teste.pdf';const arquivo=path.join(process.env.CONVERSOR_UPLOAD_DIR,nome);
+ fs.writeFileSync(arquivo,'%PDF-teste');
+ const id=Number(db.prepare("INSERT INTO documentos (nome_arquivo,caminho_pdf,processamento,dados_json) VALUES (?,?,'processando',?)").run(nome,`uploads/${nome}`,JSON.stringify({revisado_em:'2026-10-13',numero_nota:'123'})).lastInsertRowid);
+ const excluir=valor=>fetch(base+`/api/documentos/${valor}`,{method:'DELETE'});
+ assert.equal((await excluir('abc')).status,400);
+ assert.equal((await excluir(id)).status,409);
+ assert.ok(fs.existsSync(arquivo));assert.ok(db.prepare('SELECT id FROM documentos WHERE id=?').get(id));
+ db.prepare("UPDATE documentos SET processamento='pronto' WHERE id=?").run(id);
+ assert.equal((await excluir(id)).status,200);
+ assert.equal(fs.existsSync(arquivo),false);
+ assert.equal(db.prepare('SELECT id FROM documentos WHERE id=?').get(id),undefined);
+ assert.equal((await excluir(id)).status,404);
+ assert.equal((await fetch(base+`/api/documentos/${id}/revisao`)).status,404);
+ const ausente=Number(db.prepare("INSERT INTO documentos (nome_arquivo,caminho_pdf,processamento) VALUES (?,?,'erro')").run(nome,`uploads/${nome}`).lastInsertRowid);
+ assert.equal((await excluir(ausente)).status,200);
+});
 test('PDF digitalizado passa pelo OCR local', {timeout:60000},async()=>{
  const r=await lerPdf(path.join(__dirname,'fixtures/digitalizado.pdf'));
  assert.equal(r.metodo,'ocr');assert.ok(r.texto.includes('998877'));
@@ -36,6 +67,12 @@ test('Upload, duplicidade, falha isolada, revisão concorrente e ZIP', {timeout:
  const invalido=await enviar('invalido.pdf',Buffer.from('%PDF-invalido'));assert.equal(invalido.status,201);assert.equal((await esperar(invalido.dados.id)).processamento,'erro');
  assert.equal((await fetch(base+'/api/status')).status,200);
  const antes=await (await fetch(base+`/api/documentos/${id}/revisao`)).json();
+ assert.equal(antes.dados.numero_nota,'998877');
+ // A retry replaces stale machine output even when the previous run was ready.
+ db.prepare('UPDATE documentos SET dados_json=? WHERE id=?').run(JSON.stringify({...antes.dados,numero_nota:'INCORRETO'}),id);
+ assert.equal((await fetch(base+`/api/documentos/${id}/processar`,{method:'POST'})).status,202);
+ assert.equal(JSON.parse((await esperar(id)).dados_json).numero_nota,'998877');
+ antes.versao=(await(await fetch(base+`/api/documentos/${id}/revisao`)).json()).versao;
  const body={campos:{nome_tomador:'Cliente revisado',valor_servicos_centavos:'0,00'},versao:antes.versao};
  const options={method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
  assert.equal((await fetch(base+`/api/documentos/${id}/revisao`,options)).status,200);
