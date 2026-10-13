@@ -58,6 +58,27 @@ test('PDF digitalizado passa pelo OCR local', {timeout:60000},async()=>{
  assert.equal(r.metodo,'ocr');assert.ok(r.texto.includes('998877'));
  const d=interpretar(r.texto);assert.equal(d.numero_nota,'998877');assert.equal(d.valor_servicos_centavos,123456);assert.equal(d.valor_iss_centavos,6173);
 });
+test('PDF Qive preenche a revisão e exporta os valores extraídos', {timeout:60000},async()=>{
+ const {pdfQive}=require('./fixtures/qive');
+ const resposta=await enviar('qive-sintetico.pdf',pdfQive());assert.equal(resposta.status,201);
+ const id=resposta.dados.id;assert.equal((await esperar(id)).processamento,'pronto');
+ const revisao=await(await fetch(base+`/api/documentos/${id}/revisao`)).json();
+ assert.equal(revisao.dados.modelo,'qive');assert.equal(revisao.dados.valor_servicos_centavos,37699);
+ assert.equal(revisao.dados.nome_prestador,'Empresa Sintética Ltda');
+ assert.equal(revisao.dados.valor_liquido_centavos,37699);assert.equal(revisao.dados.valor_iss_centavos,754);
+ assert.equal(revisao.dados.valor_ibs_centavos,36);assert.equal(revisao.dados.valor_cbs_centavos,320);
+ assert.equal(revisao.dados.tomador_inscricao_municipal,undefined);
+ const xml=await(await fetch(base+`/api/documentos/${id}/xml`)).text();
+ assert.ok(xml.includes('<ValorServicos>376.99</ValorServicos>'));assert.ok(xml.includes('<ValorIss>7.54</ValorIss>'));
+});
+test('Layout inédito com ordem interna invertida chega preenchido à revisão', {timeout:60000},async()=>{
+ const {pdfPosicional}=require('./fixtures/posicional');
+ const r=await enviar('layout-inedito.pdf',pdfPosicional());assert.equal(r.status,201);
+ const doc=await esperar(r.dados.id);assert.equal(doc.processamento,'pronto');
+ const {dados:d}=await(await fetch(base+`/api/documentos/${doc.id}/revisao`)).json();
+ for(const [c,v] of Object.entries({modelo:'generico_posicional',numero_nota:'772',competencia:'2026-10',nome_prestador:'Empresa de Teste',cnpj_prestador:'12345678000190',nome_tomador:'Cliente de Teste',cnpj_tomador:'12345678909',valor_servicos_centavos:123456,valor_iss_centavos:2469}))assert.equal(d[c],v,c);
+ assert.equal(d.origens.nome_prestador.pagina,1);assert.equal(d.metodo_leitura,'texto');
+});
 test('Upload, duplicidade, falha isolada, revisão concorrente e ZIP', {timeout:60000},async()=>{
  const buffer=fs.readFileSync(path.join(__dirname,'fixtures/layout-generico.pdf'));
  assert.equal((await enviar('nao-pdf.pdf',Buffer.from('texto'))).status,400);

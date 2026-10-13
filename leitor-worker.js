@@ -5,15 +5,28 @@ process.on('message', async ({caminho}) => {
   let parser, ocr;
   const avisos=[];
   try {
-    parser=new PDFParse({data:new Uint8Array(await fs.readFile(caminho))});
+    const buffer=await fs.readFile(caminho);
+    parser=new PDFParse({data:new Uint8Array(buffer)});
     const info=await parser.getInfo();
     if(info.total>50) throw new Error('O PDF tem mais de 50 páginas. Divida-o em arquivos menores.');
     const resultado=await parser.getText();
+    let extracao;
+    if(info.total===1 && /NFSe Campinas - Prestador/.test(resultado.pages[0]?.text||'')){
+      extracao=await require('./extrator-campinas').lerCampinas(buffer);
+    }
+    let posicional;
+    const textoNativo=resultado.pages.map(p=>p.text).join('\n');
+    const conhecido=/PREFEITURA MUNICIPAL DE (?:BARUERI|SANTOS)|DANFSe\s+v2|Notas fiscais gerenciadas pela Qive/i.test(textoNativo);
+    if(!extracao&&!conhecido){
+      try{posicional=await require('./extrator-posicional').lerPosicoes(buffer);}
+      catch{avisos.push('A leitura por posição não pôde ser concluída; usada leitura de texto e OCR.');}
+    }
     const paginas=[];
     let usouOcr=false, paginasOcr=0;
     for (let i=0;i<resultado.pages.length;i++) {
       let texto=resultado.pages[i].text.trim();
-      const campos=extrairGenerico(texto).dados;
+      const campos={...extrairGenerico(texto).dados,...extracao?.dados};
+      for(const [campo,origem] of Object.entries(posicional?.origens||{}))if(origem.pagina===i+1)campos[campo]=posicional.dados[campo];
       const temDados=['numero_nota','cnpj_prestador','cnpj_tomador','valor_servicos_centavos'].some(c=>campos[c]!=null);
       if(texto.replace(/\s/g,'').length<40 || !temDados) {
         if(++paginasOcr>20) { avisos.push(`Página ${i+1} sem OCR: limite de 20 páginas digitalizadas por arquivo.`); paginas.push(texto); continue; }
@@ -37,10 +50,11 @@ process.on('message', async ({caminho}) => {
       paginas.push(texto);
     }
     const texto=paginas.join('\n\n');
+    if(posicional?.vistos.length)extracao=require('./extrator-posicional').combinarPosicoes(posicional,extrairGenerico(texto));
     if(texto.length>1000000) throw new Error('Texto muito extenso. Divida o PDF em arquivos menores.');
     if(!texto.trim()) avisos.push('Não foi encontrado texto legível. O arquivo está disponível para revisão manual.');
     if(usouOcr) avisos.push('Texto obtido por OCR. Confira números, datas e valores com o PDF.');
-    process.send({ok:true,texto,avisos,metodo:usouOcr?'ocr':'texto',paginas:paginas.length});
+    process.send({ok:true,texto,avisos,extracao,metodo:usouOcr?'ocr':'texto',paginas:paginas.length});
   } catch(erro) {process.send({ok:false,erro: /password/i.test(erro.message)?'PDF protegido por senha. Envie uma cópia desbloqueada.': 'Falha na leitura do PDF: '+erro.message});}
   finally {if(ocr) await ocr.terminate().catch(()=>{});if(parser) await parser.destroy().catch(()=>{});process.disconnect();}
 });

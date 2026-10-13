@@ -181,7 +181,7 @@ function renderizarCampos(dados){
     const valor=dados[campo];input.value=valor==null?'':campo.endsWith('_centavos')?(valor/100).toFixed(2).replace('.',','):String(valor);
     if(campo.endsWith('_centavos')||campo==='aliquota_percentual')input.inputMode='decimal';
     label.append(input);
-    const origem=dados.origens?.[campo];if(origem){const fonte=el('small','',`Origem: ${origem.metodo}`);fonte.title=origem.trecho||'';label.append(fonte);}
+    const origem=dados.origens?.[campo];if(origem){const fonte=el('small','',`Origem: ${origem.metodo}${origem.pagina?' • página '+origem.pagina:''}`);fonte.title=origem.trecho||'';label.append(fonte);}
     grupos.get(nomeGrupo).append(label);
   }
 }

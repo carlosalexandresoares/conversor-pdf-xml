@@ -5,6 +5,7 @@ const {extrairCampos}=require('./extrator');
 const {extrairComplementos}=require('./extrator-complementos');
 const {extrairGenerico}=require('./extrator-generico');
 const {extrairDanfse}=require('./extrator-danfse');
+const {extrairQive}=require('./extrator-qive');
 const {preencherCodigosMunicipios}=require('./municipios');
 const pastaUploads=process.env.CONVERSOR_UPLOAD_DIR || path.join(__dirname,'uploads');
 const fila=[]; const ativos=new Set(); let trabalhando=false;
@@ -30,7 +31,13 @@ function lerPdf(caminho) {
     child.send({caminho});
   });
 }
-function interpretar(texto) {
+function interpretar(texto,extracao) {
+  const qive=extracao||extrairQive(texto);
+  if(qive){
+    const dados={...qive.dados,origens:qive.origens,avisos:qive.avisos};
+    preencherCodigosMunicipios(dados);
+    return dados;
+  }
   const generico=extrairGenerico(texto);
   let dados={...generico.dados},origens={...generico.origens};
   try {
@@ -55,7 +62,7 @@ async function consumir() {
         if(anterior.revisado_em||doc.status==='conferido') {db.prepare("UPDATE documentos SET processamento='pronto' WHERE id=?").run(id);continue;}
         db.prepare("UPDATE documentos SET processamento='processando',erro_processamento=NULL WHERE id=?").run(id);
         const leitura=await lerPdf(caminhoPdf(doc));
-        const extraido=interpretar(leitura.texto);
+        const extraido=interpretar(leitura.texto,leitura.extracao);
         // Reviewed documents are excluded above. Retry must replace stale extraction.
         const dados={...extraido};
         for(const [campo,origem] of Object.entries(anterior.origens||{})) if(origem.metodo==='revisão manual') dados[campo]=anterior[campo];
