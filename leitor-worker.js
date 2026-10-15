@@ -15,15 +15,22 @@ process.on('message', async ({caminho}) => {
     if(info.total===1 && /NFSe Campinas - Prestador/.test(resultado.pages[0]?.text||'')){
       extracao=await require('./extrator-campinas').lerCampinas(buffer);
     }
-    let posicional;
+    let posicional,documento;
     const textoNativo=resultado.pages.map(p=>p.text).join('\n');
     const conhecido=/PREFEITURA MUNICIPAL DE (?:BARUERI|SANTOS)|DANFSe\s+v2|Notas fiscais gerenciadas pela Qive/i.test(textoNativo);
-    if(!extracao&&!conhecido){
-      try{posicional=await require('./extrator-posicional').lerPosicoes(buffer);}
+    // O modelo de posições é montado para todos os PDFs. Adaptadores conhecidos
+    // continuam responsáveis pelo valor; a posição pode confirmar sua origem.
+    {
+      try{
+        const leitura=await require('./extrator-posicional').lerPosicoes(buffer,{comDocumento:true});
+        documento=leitura.documento;
+        const {documento:ignorado,...campos}=leitura;
+        posicional=campos;
+      }
       catch{avisos.push('A leitura por posição não pôde ser concluída; usada leitura de texto e OCR.');}
     }
     const paginas=[];
-    let usouOcr=false, paginasOcr=0;
+    let usouOcr=false, paginasOcr=0,ocrComPosicoes=false;
     for (let i=0;i<resultado.pages.length;i++) {
       let texto=resultado.pages[i].text.trim();
       const campos={...extrairGenerico(texto).dados,...extracao?.dados};
@@ -38,12 +45,19 @@ process.on('message', async ({caminho}) => {
             ocr=await createWorker('por',1,{langPath,cacheMethod:'none',gzip:true});
           }
           const imagem=await parser.getScreenshot({partial:[i+1],desiredWidth:1800,imageDataUrl:false,imageBuffer:true});
-          const reconhecimento=await ocr.recognize(imagem.pages[0].data);
+          const reconhecimento=await ocr.recognize(imagem.pages[0].data,{}, {text:true,blocks:true});
           if(reconhecimento.data.text.trim()) {
             // Keep the native text if OCR found less information.
             const novo=reconhecimento.data.text.trim();
             const contar=t=>Object.keys(extrairGenerico(t).dados).length;
-            if(contar(novo)>=contar(texto) || texto.replace(/\s/g,'').length<40) {texto=novo;usouOcr=true;}
+            if(contar(novo)>=contar(texto) || texto.replace(/\s/g,'').length<40) {
+              texto=novo;usouOcr=true;
+              if(documento){
+                const {paginaOcr,organizarDocumento}=require('./layout-documento');
+                documento.paginas[i]=organizarDocumento([paginaOcr(reconhecimento.data,imagem.pages[0],i,documento.paginas[i])]).paginas[0];
+                ocrComPosicoes=true;
+              }
+            }
           }
           if(reconhecimento.data.confidence<70) avisos.push(`OCR da página ${i+1} tem baixa confiança; confira com o original.`);
         } catch(erro) {avisos.push(`Não foi possível aplicar OCR à página ${i+1}. Revise o PDF e preencha os campos manualmente.`);}
@@ -51,11 +65,14 @@ process.on('message', async ({caminho}) => {
       paginas.push(texto);
     }
     const texto=paginas.join('\n\n');
-    if(posicional?.vistos.length)extracao=require('./extrator-posicional').combinarPosicoes(posicional,extrairGenerico(texto));
+    if(ocrComPosicoes)posicional=require('./extrator-posicional').extrairPosicoes(documento);
+    if(!extracao&&!conhecido&&posicional?.vistos.length)extracao=require('./extrator-posicional').combinarPosicoes(posicional,extrairGenerico(texto));
     if(texto.length>1000000) throw new Error('Texto muito extenso. Divida o PDF em arquivos menores.');
     if(!texto.trim()) avisos.push('Não foi encontrado texto legível. O arquivo está disponível para revisão manual.');
     if(usouOcr) avisos.push('Texto obtido por OCR. Confira números, datas e valores com o PDF.');
-    process.send({ok:true,texto,avisos,extracao,metodo:usouOcr?'ocr':'texto',paginas:paginas.length});
+    process.send({ok:true,texto,avisos,extracao,
+      evidencias:posicional?{dados:posicional.dados,origens:posicional.origens}:null,
+      metodo:usouOcr?'ocr':'texto',paginas:paginas.length});
   } catch(erro) {process.send({ok:false,erro: /password/i.test(erro.message)?'PDF protegido por senha. Envie uma cópia desbloqueada.': 'Falha na leitura do PDF: '+erro.message});}
   finally {if(ocr) await ocr.terminate().catch(()=>{});if(parser) await parser.destroy().catch(()=>{});process.disconnect();}
 });

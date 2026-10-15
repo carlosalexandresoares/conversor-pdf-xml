@@ -135,6 +135,7 @@
         <p id="aviso-revisao" class="notice" hidden></p>
         <div class="review-tabs" role="tablist" aria-label="Conteúdo da revisão"><button type="button" id="tab-campos"
             role="tab" aria-selected="true" aria-controls="form-revisao">Campos extraídos</button><button type="button"
+            id="tab-json" role="tab" aria-selected="false" aria-controls="dados-estruturados">Dados organizados</button><button type="button"
             id="tab-texto" role="tab" aria-selected="false" aria-controls="texto-extraido">Texto completo</button></div>
         <p class="review-help">Deixe vazio o que não estiver no documento. Valores monetários: 5745,84. Campos sugeridos
           pela leitura automática precisam de conferência.</p>
@@ -145,6 +146,7 @@
               type="submit">Salvar revisão</button>
           </div>
         </form>
+        <pre id="dados-estruturados" hidden></pre>
         <pre id="texto-extraido" hidden></pre>
         <button type="button" class="text-btn" id="tentar-leitura" hidden>Tentar leitura novamente</button>
         <button type="button" class="btn secondary" id="preencher-texto">Preencher pelo texto</button>

@@ -48,7 +48,7 @@ Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige in
 
 ## Cobertura real e limites
 
-Para layouts sem adaptador, o sistema também lê as posições dos textos na página. Reconhece nomes equivalentes de campos, títulos fragmentados, valores à direita ou abaixo e blocos de prestador/emitente/fornecedor e tomador/cliente/destinatário. A revisão mostra a página de origem e o trecho usado em cada campo encontrado dessa forma. Tudo funciona localmente, sem API de IA ou nova dependência. O OCR local existente continua sendo usado quando necessário.
+O sistema lê as posições dos textos na página em todos os PDFs, inclusive quando usa OCR. Reconhece nomes equivalentes de campos, títulos fragmentados, valores à direita ou abaixo e blocos de prestador/emitente/fornecedor e tomador/cliente/destinatário. Nos formatos conhecidos, os adaptadores continuam prioritários; a posição é anexada quando confirma o mesmo valor. Na revisão, **Ver no PDF** destaca o trecho encontrado e **Dados organizados** mostra um JSON dos campos atuais e suas origens. Tudo funciona localmente, sem API de IA ou nova dependência.
 
 Datas impossíveis, valores de formato inválido, traços e asteriscos não são convertidos em dados. Valores distintos para o mesmo campo entre páginas geram aviso e deixam esse campo vazio. Isso amplia a cobertura, mas não garante qualquer layout: títulos desconhecidos, posições ambíguas e documentos ilegíveis ainda exigem conferência. Cada PDF continua representando uma única nota. Os leitores específicos de Barueri, Santos, DANFSe, Qive e Campinas têm prioridade.
 

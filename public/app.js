@@ -175,6 +175,38 @@ function grupo(campo){
   if(campo.includes('servico')||campo.includes('municipio')||campo.startsWith('uf_'))return 'Serviço e municípios';
   return 'Identificação da nota';
 }
+// O JSON é uma visão dos campos da revisão, com origem e valor ainda não salvo.
+function atualizarDadosOrganizados(){
+  if(!revisao)return;
+  const nomes={'Identificação da nota':'nota','Prestador':'prestador','Tomador':'tomador','RPS':'rps',
+    'Serviço e municípios':'servico','Valores e tributos':'valores_e_tributos','Campos adicionais do XML':'xml'};
+  const entradas=new Map([...$('#campos-revisao').querySelectorAll('input,select,textarea')].map(i=>[i.name,i.value]));
+  const documento={versao:1,arquivo:revisao.nome_arquivo,modelo:revisao.dados.modelo||null};
+  for(const [campo] of definicoes){
+    const secao=nomes[grupo(campo)];documento[secao]??={};
+    const digitado=entradas.get(campo)??'';
+    const original=revisao.dados[campo];
+    const anterior=original==null?'':campo.endsWith('_centavos')?(original/100).toFixed(2).replace('.',','):String(original);
+    let valor=digitado.trim()||null;
+    if(valor!=null&&campo.endsWith('_centavos')&&/^\d+(?:[.,]\d{1,2})?$/.test(valor))valor=Math.round(Number(valor.replace(',','.'))*100);
+    documento[secao][campo]={valor,origem:digitado!==anterior?{metodo:'edição pendente'}:revisao.dados.origens?.[campo]||null};
+  }
+  $('#dados-estruturados').textContent=JSON.stringify(documento,null,2);
+}
+function mostrarOrigemNoPdf(origem){
+  if(!origem?.area||!origem.pagina)return;
+  if(matchMedia('(max-width: 850px)').matches){window.open(`${$('#abrir-pdf').href}#page=${origem.pagina}`,'_blank','noopener');return;}
+  $('#preview-pdf').contentWindow?.postMessage({tipo:'destacar-origem',pagina:origem.pagina,area:origem.area},location.origin);
+}
+function mostrarOrigemCampo(label,origem){
+  label.querySelectorAll('.field-source,.source-link').forEach(i=>i.remove());
+  if(!origem)return;
+  const fonte=el('small','field-source',`Origem: ${origem.metodo}${origem.pagina?' • página '+origem.pagina:''}`);
+  fonte.title=origem.trecho||'';label.append(fonte);
+  if(origem.area){const ver=el('button','source-link','Ver no PDF');ver.type='button';
+    ver.title=origem.trecho||'Mostrar trecho no documento original';
+    ver.addEventListener('click',e=>{e.preventDefault();mostrarOrigemNoPdf(origem);});label.append(ver);}
+}
 function renderizarCampos(dados){
   const area=$('#campos-revisao');area.replaceChildren();const grupos=new Map();
   for(const [campo,titulo] of definicoes){
@@ -190,7 +222,7 @@ function renderizarCampos(dados){
     const valor=dados[campo];input.value=valor==null?'':campo.endsWith('_centavos')?(valor/100).toFixed(2).replace('.',','):String(valor);
     if(campo.endsWith('_centavos')||campo==='aliquota_percentual')input.inputMode='decimal';
     label.append(input);
-    const origem=dados.origens?.[campo];if(origem){const fonte=el('small','',`Origem: ${origem.metodo}${origem.pagina?' • página '+origem.pagina:''}`);fonte.title=origem.trecho||'';label.append(fonte);}
+    mostrarOrigemCampo(label,dados.origens?.[campo]);
     grupos.get(nomeGrupo).append(label);
   }
 }
@@ -211,7 +243,7 @@ async function abrirRevisao(id,atualizacao=false){
   $('#salvar-revisao').disabled=['fila','processando'].includes(resultado.processamento);
   $('#tentar-leitura').hidden=processando||!!resultado.dados.revisado_em;
   $('#preencher-texto').disabled=processando||!resultado.texto_extraido;
-  $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);trocarAba(false);
+  $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);atualizarDadosOrganizados();trocarAba(false);
   for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando;
   if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
 }
@@ -226,11 +258,20 @@ function fechar(){
 }
 $('#fechar-revisao').addEventListener('click',fechar);
 $('#revisao-dialog').addEventListener('cancel',e=>{e.preventDefault();fechar();});
-$('#form-revisao').addEventListener('input',()=>{alterado=true;});
+$('#form-revisao').addEventListener('input',()=>{alterado=true;atualizarDadosOrganizados();});
 window.addEventListener('beforeunload',e=>{if(alterado||enviando){e.preventDefault();e.returnValue='';}});
-function trocarAba(texto){$('#tab-campos').setAttribute('aria-selected',String(!texto));$('#tab-texto').setAttribute('aria-selected',String(texto));$('#form-revisao').hidden=texto;$('#texto-extraido').hidden=!texto;}
-$('#tab-campos').addEventListener('click',()=>trocarAba(false));$('#tab-texto').addEventListener('click',()=>trocarAba(true));
-for(const seletor of ['#tab-campos','#tab-texto'])$(seletor).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const texto=seletor==='#tab-campos';trocarAba(texto);$(texto?'#tab-texto':'#tab-campos').focus();}});
+function trocarAba(destino){
+  const aba=destino===true?'texto':destino===false?'campos':destino;
+  for(const nome of ['campos','json','texto'])$('#tab-'+nome).setAttribute('aria-selected',String(nome===aba));
+  $('#form-revisao').hidden=aba!=='campos';$('#dados-estruturados').hidden=aba!=='json';$('#texto-extraido').hidden=aba!=='texto';
+  if(aba==='json')atualizarDadosOrganizados();
+}
+for(const nome of ['campos','json','texto']){
+  $('#tab-'+nome).addEventListener('click',()=>trocarAba(nome));
+  $('#tab-'+nome).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;
+    e.preventDefault();const abas=['campos','json','texto'];const indice=(abas.indexOf(nome)+(e.key==='ArrowRight'?1:2))%3;
+    trocarAba(abas[indice]);$('#tab-'+abas[indice]).focus();});
+}
 $('#form-revisao').addEventListener('submit',async e=>{
   e.preventDefault();if(!revisao||salvando)return;
   salvando=true;$('#salvar-revisao').disabled=true;$('#mensagem-revisao').textContent='Salvando…';
@@ -263,9 +304,13 @@ $('#preencher-texto').addEventListener('click',async()=>{
       const novo=formatar(valor);
       if(campo.value===novo)continue;
       campo.value=novo;
+      atual.dados[campo.name]=valor;
+      atual.dados.origens??={};
+      if(dados.origens?.[campo.name])atual.dados.origens[campo.name]=dados.origens[campo.name];
+      mostrarOrigemCampo(campo.closest('label'),atual.dados.origens[campo.name]);
       quantidade++;
     }
-    if(quantidade){alterado=true;trocarAba(false);}
+    if(quantidade){alterado=true;atualizarDadosOrganizados();trocarAba(false);}
     $('#mensagem-revisao').textContent=quantidade?`${quantidade} campo(s) preenchido(s) ou corrigido(s) pelo texto. Confira e clique em Salvar revisão.`:'Nenhum campo pôde ser preenchido com segurança a partir do texto.';
     if(dados.avisos?.length){$('#aviso-revisao').hidden=false;$('#aviso-revisao').textContent=dados.avisos.join('\n');}
   }catch(erro){if(revisao===atual)$('#mensagem-revisao').textContent=erro.message;}

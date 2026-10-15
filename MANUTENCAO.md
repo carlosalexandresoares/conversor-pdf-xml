@@ -7,7 +7,7 @@ Este documento mostra onde alterar cada parte do sistema. Os comentários no có
 1. [index.html](./public/index.html) mostra o formulário e [app.js](./public/app.js) envia os arquivos, um por vez, para a API.
 2. [upload.js](./upload.js) valida e armazena o PDF. [database.js](./database.js) mantém o registro e seus dados.
 3. [processamento.js](./processamento.js) controla a fila e executa [leitor-worker.js](./leitor-worker.js) em outro processo, para uma leitura demorada não travar o servidor.
-4. O leitor extrai o texto, tenta [extrator-posicional.js](./extrator-posicional.js) nos layouts desconhecidos e usa OCR local quando necessário. [extrator-generico.js](./extrator-generico.js), [extrator-contexto.js](./extrator-contexto.js) e [layout-texto.js](./layout-texto.js) complementam a leitura por texto. Há adaptadores para formatos já conhecidos em `extrator-*.js`.
+4. O leitor extrai o texto e monta, com [layout-documento.js](./layout-documento.js), um modelo de páginas e trechos com coordenadas tanto para PDF nativo quanto para OCR. [extrator-posicional.js](./extrator-posicional.js) associa rótulos e valores; nos layouts conhecidos, os adaptadores mantêm prioridade e as coordenadas confirmam a origem quando o valor coincide. [extrator-generico.js](./extrator-generico.js), [extrator-contexto.js](./extrator-contexto.js) e [layout-texto.js](./layout-texto.js) complementam a leitura por texto.
 5. [revisao.js](./revisao.js) entrega os dados e recebe as alterações feitas na tela. [visualizar.js](./public/visualizar.js) desenha o PDF original na prévia.
 6. [exportacao.js](./exportacao.js) monta o XML individual ou o ZIP a partir dos dados salvos.
 
@@ -16,7 +16,7 @@ Este documento mostra onde alterar cada parte do sistema. Os comentários no có
 - [index.html](./public/index.html) define a estrutura da página. Os IDs são usados por [app.js](./public/app.js); antes de renomeá-los, atualize os seletores correspondentes.
 - [app.js](./public/app.js) está dividido em blocos comentados: utilitários, biblioteca, importação, ações e revisão. Os campos da revisão vêm de [campos.json](./public/campos.json), não do HTML.
 - [style.css](./public/style/style.css) reúne estilos globais, navegação, importação, biblioteca, revisão e regras responsivas, nessa ordem. Regras posteriores podem sobrescrever anteriores; confira os blocos `@media` ao alterar um seletor.
-- [visualizar.html](./public/visualizar.html) e [visualizar.js](./public/visualizar.js) compõem a prévia do PDF dentro da revisão.
+- [visualizar.html](./public/visualizar.html) e [visualizar.js](./public/visualizar.js) compõem a prévia do PDF e destacam a área de origem pedida pela revisão. A aba **Dados organizados** mostra os valores atuais da tela em JSON, inclusive alterações ainda não salvas.
 
 ## Servidor e dados
 
@@ -29,7 +29,9 @@ Este documento mostra onde alterar cada parte do sistema. Os comentários no có
 
 ## Extração de dados
 
+- [layout-documento.js](./layout-documento.js) normaliza fragmentos de PDF e palavras de OCR no mesmo formato e calcula a área de origem para a prévia.
 - [extrator-posicional.js](./extrator-posicional.js) associa rótulos, valores e blocos por posição na página. As regras genéricas ficam na lista `regras`; adicione variações de rótulo ali apenas quando houver validação confiável do valor.
+- Cabeçalhos em colunas usam o centro de cada rótulo para delimitar a célula de baixo. Quando o título "Prestador" não aparece, a associação com a empresa anterior ao tomador exige um único nome empresarial e um CNPJ rotulado próximo; endereço sem rótulo exige rua, número e linha de cidade/UF/CEP no mesmo bloco.
 - [extrator-generico.js](./extrator-generico.js) e [extrator-contexto.js](./extrator-contexto.js) tentam recuperar dados a partir do texto completo sem inventar valores ausentes.
 - [layout-texto.js](./layout-texto.js) prepara trechos de texto cuja ordem foi embaralhada pelo PDF.
 - [extrator.js](./extrator.js), [extrator-complementos.js](./extrator-complementos.js), [extrator-campinas.js](./extrator-campinas.js), [extrator-danfse.js](./extrator-danfse.js) e [extrator-qive.js](./extrator-qive.js) contêm regras de formatos conhecidos.

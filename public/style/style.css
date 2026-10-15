@@ -143,6 +143,8 @@ iframe{width:100%;flex:1;border:0}
 .field input,.field textarea,.field select{width:100%;border:1px solid #dce4eb;border-radius:5px;color:var(--ink);background:#fff;padding:9px;font-size:12px}
 .field.full{grid-column:1/-1}
 .field small{font-size:9px;color:#92a1af}
+.source-link{align-self:flex-start;border:0;background:transparent;color:var(--blue);font-size:10px;padding:0;text-decoration:underline}
+.source-link:hover{text-decoration:none}
 .save-bar{position:sticky;bottom:-20px;background:#fff;border-top:1px solid var(--line);padding:14px 0;display:flex;gap:12px;align-items:center;justify-content:space-between;z-index:1}
 .save-bar p{font-size:11px;line-height:1.5;white-space:pre-line}
 .text-btn{border:0;background:transparent;color:var(--blue);font-size:11px;text-decoration:underline;padding:12px 0}

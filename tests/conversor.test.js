@@ -56,6 +56,8 @@ test('Exclusão remove PDF e revisão, valida ID e protege documentos em leitura
 test('PDF digitalizado passa pelo OCR local', {timeout:60000},async()=>{
  const r=await lerPdf(path.join(__dirname,'fixtures/digitalizado.pdf'));
  assert.equal(r.metodo,'ocr');assert.ok(r.texto.includes('998877'));
+ assert.equal(r.extracao?.origens?.numero_nota?.metodo,'OCR, posição e rótulo');
+ assert.ok(r.extracao.origens.numero_nota.area.w>0);
  const d=interpretar(r.texto);assert.equal(d.numero_nota,'998877');assert.equal(d.valor_servicos_centavos,123456);assert.equal(d.valor_iss_centavos,6173);
 });
 test('PDF Qive preenche a revisão e exporta os valores extraídos', {timeout:60000},async()=>{
@@ -78,6 +80,7 @@ test('Layout inédito com ordem interna invertida chega preenchido à revisão',
  const {dados:d}=await(await fetch(base+`/api/documentos/${doc.id}/revisao`)).json();
  for(const [c,v] of Object.entries({modelo:'generico_posicional',numero_nota:'772',competencia:'2026-10',nome_prestador:'Empresa de Teste',cnpj_prestador:'12345678000190',nome_tomador:'Cliente de Teste',cnpj_tomador:'12345678909',valor_servicos_centavos:123456,valor_iss_centavos:2469}))assert.equal(d[c],v,c);
  assert.equal(d.origens.nome_prestador.pagina,1);assert.equal(d.metodo_leitura,'texto');
+ assert.ok(d.origens.nome_prestador.area.w>0);
  const sugestoes=await(await fetch(base+`/api/documentos/${doc.id}/sugestoes-texto`)).json();
  assert.equal(sugestoes.dados.numero_nota,'772');assert.equal(sugestoes.dados.nome_tomador,'Cliente de Teste');
 });

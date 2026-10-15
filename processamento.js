@@ -68,6 +68,14 @@ async function consumir() {
         db.prepare("UPDATE documentos SET processamento='processando',erro_processamento=NULL WHERE id=?").run(id);
         const leitura=await lerPdf(caminhoPdf(doc));
         const extraido=interpretar(leitura.texto,leitura.extracao);
+        // Adaptadores de layouts conhecidos mantêm seus valores. A posição é
+        // anexada apenas quando confirma exatamente o mesmo campo e valor.
+        for(const [campo,origem] of Object.entries(leitura.evidencias?.origens||{})){
+          if(extraido[campo]==null||String(extraido[campo])!==String(leitura.evidencias.dados[campo]))continue;
+          extraido.origens??={};
+          extraido.origens[campo]={...extraido.origens[campo],pagina:origem.pagina,area:origem.area,
+            trecho:extraido.origens[campo]?.trecho||origem.trecho};
+        }
         // Reviewed documents are excluded above. Retry must replace stale extraction.
         const dados={...extraido};
         for(const [campo,origem] of Object.entries(anterior.origens||{})) if(origem.metodo==='revisão manual') dados[campo]=anterior[campo];
