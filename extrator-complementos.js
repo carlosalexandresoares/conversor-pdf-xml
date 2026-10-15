@@ -1,3 +1,4 @@
+// Complementa a leitura dos layouts originais com campos fiscais adicionais.
 function capturar(texto, expressao) {
   return texto.match(expressao)?.[1]?.trim() || null;
 }

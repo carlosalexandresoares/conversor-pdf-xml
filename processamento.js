@@ -1,3 +1,4 @@
+// Organiza a fila, inicia o leitor isolado e grava o resultado da extracao.
 const {fork}=require('node:child_process');
 const path=require('node:path');
 const db=require('./database');
@@ -9,11 +10,13 @@ const {extrairQive}=require('./extrator-qive');
 const {preencherCodigosMunicipios}=require('./municipios');
 const pastaUploads=process.env.CONVERSOR_UPLOAD_DIR || path.join(__dirname,'uploads');
 const fila=[]; const ativos=new Set(); let trabalhando=false;
+// Resolve somente nomes de arquivo dentro da pasta de uploads.
 function caminhoPdf(doc) {
   const caminho=path.resolve(pastaUploads,path.basename(doc.caminho_pdf || ''));
   if(!doc.caminho_pdf || path.dirname(caminho)!==path.resolve(pastaUploads)) throw new Error('PDF original não localizado.');
   return caminho;
 }
+// Executa a leitura em processo filho com limite de memória e tempo.
 function lerPdf(caminho) {
   return new Promise((resolve,reject)=>{
     const child=fork(path.join(__dirname,'leitor-worker.js'),[],{stdio:['ignore','ignore','pipe','ipc'],execArgv:['--max-old-space-size=512']});
@@ -31,6 +34,7 @@ function lerPdf(caminho) {
     child.send({caminho});
   });
 }
+// Combina o resultado do leitor com adaptadores conhecidos e códigos municipais.
 function interpretar(texto,extracao) {
   const qive=extracao||extrairQive(texto);
   if(qive){
@@ -50,6 +54,7 @@ function interpretar(texto,extracao) {
   preencherCodigosMunicipios(dados);
   return dados;
 }
+// Consome a fila em ordem e só grava se a revisão não mudou durante a leitura.
 async function consumir() {
   if(trabalhando)return;trabalhando=true;
   try {
@@ -79,12 +84,14 @@ async function consumir() {
     }
   } finally {trabalhando=false;}
 }
+// Impede o mesmo documento de entrar duas vezes na fila ativa.
 function enfileirar(id) {
   if(ativos.has(id))return;
   ativos.add(id);fila.push(id);
   db.prepare("UPDATE documentos SET processamento='fila',erro_processamento=NULL WHERE id=?").run(id);
   setImmediate(()=>consumir().catch(erro=>console.error('Fila:',erro.message)));
 }
+// Recupera leituras interrompidas quando o servidor volta a iniciar.
 function retomar() {
   for(const doc of db.prepare("SELECT id,dados_json,processamento FROM documentos WHERE processamento IN ('novo','fila','processando')").all()) {
     const dados=JSON.parse(doc.dados_json||'{}');

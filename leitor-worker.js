@@ -1,3 +1,4 @@
+// Processo isolado: extrai texto, tenta leitura posicional e aplica OCR quando necessario.
 const fs = require('node:fs/promises');
 const { PDFParse } = require('pdf-parse');
 const { extrairGenerico } = require('./extrator-generico');

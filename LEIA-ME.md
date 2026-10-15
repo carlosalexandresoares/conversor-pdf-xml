@@ -4,6 +4,17 @@ Aplicação local para armazenar PDFs de NFS-e, extrair dados, revisar e exporta
 
 ## Atualização no Windows
 
+### Iniciar em outro computador Windows
+
+1. Instale o **Node.js 24 LTS** pelo instalador completo de [nodejs.org](https://nodejs.org/), incluindo npm e a opção de adicionar ao PATH.
+2. Copie a pasta completa do código para uma pasta local em que você possa gravar arquivos. Inclua `package.json`, `package-lock.json` e as pastas `public` e demais arquivos do projeto. Não copie `node_modules` entre computadores: as dependências nativas serão instaladas para a máquina de destino.
+3. Dê dois cliques em **[INICIAR.bat](./INICIAR.bat)**. Ele verifica o ambiente, instala as dependências quando necessário e abre o navegador depois que o servidor começa a responder. A primeira instalação exige internet; as próximas inicializações podem funcionar offline.
+4. Mantenha a janela aberta. Para desligar o servidor, pressione **Ctrl+C**.
+
+O iniciador não é um executável independente: ele precisa do Node.js instalado. Não requer instalar a aplicação globalmente nem copiar programas para pastas do Windows. Pode ser chamado pelo terminal com `.\INICIAR.bat` ou, no PowerShell, `& "C:\caminho\do\projeto\INICIAR.bat"`. Para somente verificar o ambiente, sem instalar dependências, abrir navegador ou iniciar servidor, execute `node iniciar.cjs --verificar`.
+
+Cada instalação usa seu próprio banco e PDFs. Para levar os documentos existentes, copie `data` e `uploads` com o servidor parado. Para compartilhar a mesma biblioteca, rode o servidor em apenas um computador e use o endereço de rede dele nos demais, conforme a seção “Dois computadores”.
+
 1. Pare o servidor com Ctrl+C e feche outras instâncias de Node deste projeto.
 2. Faça uma cópia da pasta atual, principalmente `data` e `uploads`, com o servidor parado. Não apague o banco nem os PDFs existentes.
 3. Extraia o conteúdo deste ZIP dentro da pasta do projeto e aceite substituir os arquivos de código. O pacote não contém banco, PDFs de clientes, `node_modules` nem `.git`.
@@ -20,6 +31,8 @@ npm start
 Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige internet para baixar as dependências e o idioma do OCR. Depois de instalado, o processamento e o OCR funcionam localmente. Nenhum PDF é enviado a APIs externas pela aplicação.
 
 ## Como usar
+
+- Na revisão, **Preencher pelo texto** reaproveita o texto completo já armazenado e, para layouts genéricos, consulta novamente a posição dos campos no PDF original. Preenche campos vazios e corrige sugestões automáticas antigas quando o campo ainda não foi editado na tela. Preserva valores digitados manualmente e não salva automaticamente: confira e use **Salvar revisão**. A leitura por contexto reconhece nomes sem rótulo dentro dos blocos das partes e totais com outras denominações. Trechos de OCR corrompidos continuam exigindo conferência no PDF.
 
 - Escolha ou arraste até 50 PDFs de uma vez; clique em **Importar arquivos**.
 - O envio ocorre arquivo a arquivo. Um arquivo inválido não cancela os demais. A leitura ocorre em uma fila no servidor.
@@ -64,6 +77,8 @@ Com o servidor parado, copie `data` e `uploads` juntos para outro local. Para re
 Se aparecer “Sem conexão com o servidor”, veja o terminal, confira `http://localhost:3000/api/status` e verifique se há outra instância ocupando a porta. O código agora apresenta uma mensagem descritiva no lugar de simplesmente “Failed to fetch”; a mensagem anterior sozinha não permitia identificar sua causa original.
 
 ## Estrutura
+
+Para localizar cada responsabilidade, acompanhar o caminho de um PDF e fazer alterações futuras, consulte o [guia de manutenção](./MANUTENCAO.md).
 
 - `server.js`: servidor e rotas da aplicação.
 - `upload.js`: validação, deduplicação e armazenamento do PDF.

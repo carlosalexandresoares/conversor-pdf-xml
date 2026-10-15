@@ -1,3 +1,4 @@
+// Leitura conservadora por rotulos e contexto para layouts sem adaptador especifico.
 const { prepararLayout } = require('./layout-texto');
 const normalizar = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function extrairGenerico(original) {
@@ -51,13 +52,20 @@ function extrairGenerico(original) {
     buscar(pessoa+'_numero',bloco,'(?:^|\\n)[ \\t]*numero'+sep+'([0-9]+|s/?n)\\b');
     buscar(pessoa+'_cep',bloco,'cep'+sep+'(\\d{5}-?\\d{3})',v=>v.replace('-',''));
     buscar(pessoa+'_uf',bloco,'\\buf'+sep+'([a-z]{2})\\b',v=>v.toUpperCase());
-    buscar(pessoa+'_inscricao_municipal',bloco,'inscricao municipal'+sep+'([a-z0-9./-]+)');
+    buscar(pessoa+'_inscricao_municipal',bloco,'inscricao municipal'+sep+'([a-z0-9./-]+)',v=>/\d/.test(v)?v:null);
     buscar(pessoa+'_email',bloco,'e-?mail'+sep+'([^\\s@]+@[^\\s@]+\\.[^\\s@]+)');
     const cidade=bloco.match(/(?:Munic[ií]pio(?:\s*\/\s*UF)?|Cidade)\s*:?\s*([^\n:]+?)\s*[-/]\s*([A-Z]{2})\b/i);
     if(cidade) {dados[pessoa+'_municipio']=cidade[1].trim();dados[pessoa+'_uf']=cidade[2].toUpperCase();}
   }
   const descricao = texto.match(/(?:discrimina[çc][ãa]o (?:dos? )?servi[çc]os|descri[çc][ãa]o dos servi[çc]os)[ \t]*:?\s*\n([\s\S]*?)(?=\n(?:VALOR|RETEN|OUTRAS INFORMA|TRIBUT)|$)/i);
   if(descricao) dados.discriminacao_servicos=descricao[1].trim().slice(0,10000);
+  const contexto=require('./extrator-contexto').extrairContexto(original);
+  for(const [campo,valor] of Object.entries(contexto.dados)){
+    if(dados[campo]==null && !avisos.some(a=>a.includes(campo))){dados[campo]=valor;origens[campo]=contexto.origens[campo];}
+    else if(dados[campo]!=null&&dados[campo]!==valor&&(/_centavos$/.test(campo)||['numero_nota','data_emissao','codigo_verificacao'].includes(campo))){delete dados[campo];delete origens[campo];avisos.push(`Há valores diferentes para ${campo}; confira o PDF.`);}
+  }
+  for(const campo of contexto.conflitos){delete dados[campo];delete origens[campo];}
+  avisos.push(...contexto.avisos);
   return {dados,origens,avisos};
 }
 module.exports={extrairGenerico};

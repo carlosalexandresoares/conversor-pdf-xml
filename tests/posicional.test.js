@@ -25,6 +25,28 @@ test('Rótulos fragmentados, data impossível e alíquota fora de faixa',()=>{
  const r=ler([item('Valor',20,20,22),item('dos',45,20,15),item('serviços',63,20,40),item('42,10',20,34),item('Data de emissão: 31/02/2026',20,65),item('Alíquota: 105%',20,95)]);
  assert.equal(r.dados.valor_servicos_centavos,4210);assert.equal(r.dados.data_emissao,undefined);assert.equal(r.dados.aliquota_percentual,undefined);
 });
+
+test('Títulos quebrados em linhas são reconstruídos para campos e seções diferentes',()=>{
+ const r=ler([
+  item('Número da',20,20),item('NFS-e',20,32),item('438',20,46),
+  item('Data de',220,20),item('emissão',220,32),item('14/10/2026',220,46),
+  item('Dados do',20,75),item('Prestador de Serviços',20,87),
+  item('CNPJ',20,105),item('12.345.678/0001-90',20,119),
+  item('Valor dos',20,150),item('serviços',20,162),item('321,45',20,176),
+  item('Valor do',220,150),item('ISS',220,162),item('9,64',220,176)
+ ]);
+ assert.equal(r.dados.numero_nota,'438');
+ assert.equal(r.dados.data_emissao,'2026-10-14');
+ assert.equal(r.dados.cnpj_prestador,'12345678000190');
+ assert.equal(r.dados.valor_servicos_centavos,32145);
+ assert.equal(r.dados.valor_iss_centavos,964);
+});
+
+test('Linhas próximas que não formam título conhecido não viram campo',()=>{
+ const r=ler([item('Prestador',20,20),item('Nome',20,40),item('Empresa Exemplo',20,53),item('Valor dos',20,85),item('outros itens',20,97),item('40,00',20,110)]);
+ assert.equal(r.dados.nome_prestador,'Empresa Exemplo');
+ assert.equal(r.dados.valor_servicos_centavos,undefined);
+});
 test('Não cruza títulos, não associa CNPJ sem papel e não usa valor de coluna vizinha',()=>{
  const r=ler([item('CNPJ: 12.345.678/0001-90',20,20),item('Prestador',20,50),item('Nome',20,70),item('Endereço',20,84),item('Rua Exemplo',20,98),item('Valor dos serviços',20,130),item('Valor do ISS',220,130),item('*****',20,144),item('2,00',220,144)]);
  assert.equal(r.dados.cnpj_prestador,undefined);assert.equal(r.dados.nome_prestador,undefined);assert.equal(r.dados.prestador_endereco,'Rua Exemplo');
@@ -40,4 +62,8 @@ test('Descrição multilinha para no quadro seguinte; municípios com UF',()=>{
  const r=ler([item('Descrição dos serviços',20,20),item('Primeira linha',20,34),item('Segunda linha',20,48),item('Valor dos serviços: 50,00',20,70),item('Local da prestação do serviço: Curitiba / PR',20,100)]);
  assert.equal(r.dados.discriminacao_servicos,'Primeira linha\nSegunda linha');
  assert.equal(r.dados.municipio_prestacao,'Curitiba');assert.equal(r.dados.uf_prestacao,'PR');
+});
+test('Campo vazio não captura conteúdo da seção seguinte',()=>{
+ const r=ler([item('Tomador',20,20),item('Complemento',20,40),item('Discriminação dos Serviços',200,55),item('Serviço de armazenagem',20,70)]);
+ assert.equal(r.dados.tomador_complemento,undefined);
 });

@@ -1,3 +1,4 @@
+// Previa local do PDF original na janela de revisao.
 import {getDocument,GlobalWorkerOptions} from '/vendor/pdfjs/build/pdf.mjs';
 GlobalWorkerOptions.workerSrc='/vendor/pdfjs/build/pdf.worker.mjs';
 const estado=document.querySelector('#estado');

@@ -1,3 +1,4 @@
+// Banco SQLite: cria tabelas e aplica migracoes sem apagar documentos existentes.
 const Database = require("better-sqlite3");
 const fs = require("node:fs");
 const path = require("node:path");

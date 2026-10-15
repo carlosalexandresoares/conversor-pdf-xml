@@ -1,3 +1,4 @@
+// Entrada HTTP: configura Express e conecta rotas de upload, revisao e exportacao.
 const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -19,6 +20,7 @@ app.get('/api/documentos', (req, res) => {
   const documentos = db.prepare(`SELECT id,nome_arquivo,modelo,numero_nota,nome_prestador,nome_tomador,valor_servicos_centavos,status,criado_em,processamento,erro_processamento,dados_json FROM documentos ORDER BY id DESC`).all();
   res.json(documentos.map(({ dados_json, ...doc }) => { const d = JSON.parse(dados_json || '{}'); return { ...doc, revisado_em: d.revisado_em || null, avisos: d.avisos || [], metodo_leitura: d.metodo_leitura || null }; }));
 });
+// Rotas da biblioteca: envio, exclusão, nova leitura e acesso ao PDF original.
 app.use('/api/documentos/upload', require('./upload'));
 app.delete('/api/documentos/:id', (req, res, next) => {
   const id = Number(req.params.id);
@@ -51,9 +53,11 @@ app.get('/api/documentos/:id/pdf', (req, res, next) => {
   res.type('pdf'); res.setHeader('Content-Disposition', `inline; filename="documento-${id}.pdf"`);
   res.sendFile(caminhoPdf(doc), erro => { if (erro) next(erro) });
 });
+// Revisão e exportação têm rotas próprias para manter o servidor principal curto.
 app.use('/api/documentos', require('./revisao'));
 app.use('/api/documentos', require('./exportacao'));
 app.use('/api', (req, res) => res.status(404).json({ erro: 'Operação não encontrada. Atualize a página com Ctrl+F5.' }));
+// Arquivos do navegador e bibliotecas usadas apenas pela prévia local do PDF.
 app.use('/vendor/pdfjs', express.static(path.dirname(require.resolve('pdfjs-dist/package.json'))));
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
 app.use((erro, req, res, next) => {

@@ -1,3 +1,4 @@
+// Adaptadores dos layouts municipais originalmente suportados.
 function capturar(texto, expressao, grupo = 1) {
   const resultado = texto.match(expressao);
   return resultado?.[grupo]?.trim() || null;

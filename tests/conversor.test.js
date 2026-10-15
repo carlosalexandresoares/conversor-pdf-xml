@@ -78,6 +78,8 @@ test('Layout inédito com ordem interna invertida chega preenchido à revisão',
  const {dados:d}=await(await fetch(base+`/api/documentos/${doc.id}/revisao`)).json();
  for(const [c,v] of Object.entries({modelo:'generico_posicional',numero_nota:'772',competencia:'2026-10',nome_prestador:'Empresa de Teste',cnpj_prestador:'12345678000190',nome_tomador:'Cliente de Teste',cnpj_tomador:'12345678909',valor_servicos_centavos:123456,valor_iss_centavos:2469}))assert.equal(d[c],v,c);
  assert.equal(d.origens.nome_prestador.pagina,1);assert.equal(d.metodo_leitura,'texto');
+ const sugestoes=await(await fetch(base+`/api/documentos/${doc.id}/sugestoes-texto`)).json();
+ assert.equal(sugestoes.dados.numero_nota,'772');assert.equal(sugestoes.dados.nome_tomador,'Cliente de Teste');
 });
 test('Upload, duplicidade, falha isolada, revisão concorrente e ZIP', {timeout:60000},async()=>{
  const buffer=fs.readFileSync(path.join(__dirname,'fixtures/layout-generico.pdf'));
@@ -88,6 +90,9 @@ test('Upload, duplicidade, falha isolada, revisão concorrente e ZIP', {timeout:
  const invalido=await enviar('invalido.pdf',Buffer.from('%PDF-invalido'));assert.equal(invalido.status,201);assert.equal((await esperar(invalido.dados.id)).processamento,'erro');
  assert.equal((await fetch(base+'/api/status')).status,200);
  const antes=await (await fetch(base+`/api/documentos/${id}/revisao`)).json();
+ const sugestoes=await fetch(base+`/api/documentos/${id}/sugestoes-texto`);
+ assert.equal(sugestoes.status,200);assert.equal((await sugestoes.json()).dados.numero_nota,'998877');
+ assert.equal(db.prepare('SELECT dados_json FROM documentos WHERE id=?').get(id).dados_json,antes.versao);
  assert.equal(antes.dados.numero_nota,'998877');
  // A retry replaces stale machine output even when the previous run was ready.
  db.prepare('UPDATE documentos SET dados_json=? WHERE id=?').run(JSON.stringify({...antes.dados,numero_nota:'INCORRETO'}),id);

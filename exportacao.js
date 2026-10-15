@@ -1,3 +1,4 @@
+// Gera XML individual e ZIP em lote a partir dos dados armazenados.
 const express = require("express");
 const db = require("./database");
 const { preencherCodigosMunicipios } = require("./municipios");

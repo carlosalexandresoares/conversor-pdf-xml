@@ -7,7 +7,7 @@ const path=require('node:path');
 test('Revisão aberta durante a leitura recebe campos automaticamente e permite salvar',async()=>{
   class Elemento {
     constructor(){this.children=[];this.value='';this.textContent='';this.open=false;this.classList={add(){},remove(){},toggle(){}};}
-    addEventListener(){} setAttribute(){} removeAttribute(){}
+    addEventListener(tipo,fn){this.listeners??={};this.listeners[tipo]=fn;} setAttribute(){} removeAttribute(){}
     append(...itens){this.children.push(...itens);}
     replaceChildren(...itens){this.children=itens;}
     showModal(){this.open=true;}
@@ -21,9 +21,10 @@ test('Revisão aberta durante a leitura recebe campos automaticamente e permite 
     window:{addEventListener(){}},Intl,AbortController,setTimeout,clearTimeout,setInterval(){},
     fetch:async url=>({ok:true,json:async()=>{
       const processamento=pronto?'pronto':'processando';
-      if(url==='/campos.json')return [['numero_nota','Número da nota']];
+      if(url==='/campos.json')return [['numero_nota','Número da nota'],['valor_servicos_centavos','Serviços']];
+      if(url.endsWith('/sugestoes-texto'))return {dados:{numero_nota:'999',valor_servicos_centavos:268238,avisos:[]}};
       if(url==='/api/documentos')return [{id:1,nome_arquivo:'nota.pdf',processamento,avisos:[]}];
-      return {id:1,nome_arquivo:'nota.pdf',processamento,dados:pronto?{numero_nota:'765'}:{},versao:pronto?'nova':'antiga'};
+      return {id:1,nome_arquivo:'nota.pdf',texto_extraido:pronto?'Numero da Nota 765':'',processamento,dados:pronto?{numero_nota:'765',origens:{numero_nota:{metodo:'rotulo'}}}:{},versao:pronto?'nova':'antiga'};
     }})
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8'),contexto);
@@ -36,5 +37,10 @@ test('Revisão aberta durante a leitura recebe campos automaticamente e permite 
   assert.equal(obter('#campos-revisao').querySelectorAll()[0].value,'765');
   assert.equal(obter('#campos-revisao').querySelectorAll()[0].disabled,false);
   assert.equal(obter('#salvar-revisao').disabled,false);
+  assert.equal(vm.runInContext('revisao.versao',contexto),'nova');
+  await obter('#preencher-texto').listeners.click();
+  assert.equal(obter('#campos-revisao').querySelectorAll()[0].value,'999');
+  assert.equal(obter('#campos-revisao').querySelectorAll()[1].value,'2682,38');
+  assert.equal(vm.runInContext('alterado',contexto),true);
   assert.equal(vm.runInContext('revisao.versao',contexto),'nova');
 });

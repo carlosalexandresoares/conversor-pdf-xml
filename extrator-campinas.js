@@ -1,3 +1,4 @@
+// Adaptador posicional do PDF de Campinas.
 const normalizar=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
 function extrairPaginaCampinas(itens) {
   const items=itens.filter(i=>i.str?.trim()).map(i=>({texto:i.str.trim(),x:i.transform[4],y:i.transform[5]}));

@@ -1,3 +1,4 @@
+// Recebe PDFs, valida o arquivo e evita duplicatas por conteudo.
 const express = require("express");
 const multer = require("multer");
 const fs = require("node:fs");

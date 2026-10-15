@@ -21,8 +21,8 @@ const regras=[
  ['rps_numero',/^(?:numero (?:do )?rps|rps numero)$/,v=>/^\d+$/.test(v)?v:null],
  ['rps_serie',/^serie (?:do )?rps$/,texto],['rps_data',/^data (?:do )?rps$/,data],
  ['cnpj_{p}',/^(?:cpf\s*\/\s*cnpj(?:\s*\/\s*nif)?|cnpj\s*\/\s*cpf|cnpj|cpf)$/,digitos],
- ['nome_{p}',/^(?:nome(?:\s*\/\s*(?:nome empresarial|razao social))?|razao social|nome empresarial)$/,texto],
- ['{p}_endereco',/^(?:endereco|logradouro)$/,texto],['{p}_bairro',/^bairro$/,texto],
+ ['nome_{p}',/^(?:nome(?:\s*\/\s*(?:nome empresarial|razao social))?|razao social(?:\s*\/\s*nome)?|nome empresarial)$/,texto],
+ ['{p}_endereco',/^(?:endereco(?: e cep)?|logradouro)$/,texto],['{p}_bairro',/^bairro$/,texto],
  ['{p}_complemento',/^complemento$/,texto],['{p}_numero',/^(?:numero|n[º°.]+)$/,v=>/^(?:\d+[a-z]?|s\/?n)$/i.test(v)?v:null],
  ['{p}_municipio',/^(?:municipio(?:\s*\/\s*uf)?|cidade)$/,texto],
  ['{p}_codigo_municipio',/^(?:codigo (?:ibge|do municipio)|ibge)$/,v=>/^\d{7}$/.test(v)?v:null],
@@ -38,15 +38,15 @@ const regras=[
  ['valor_iss_centavos',/^(?:(?:valor|v\.) (?:do )?iss(?:qn)?|iss(?:qn)? apurado)$/,dinheiro],
  ...['pis','cofins','ir','inss','csll','ibs','cbs'].map(t=>['valor_'+t+'_centavos',new RegExp('^(?:valor (?:total )?(?:do |da )?)?'+(t==='ir'?'ir(?:rf)?':t)+'$'),dinheiro]),
  ['aliquota_percentual',/^(?:aliquota(?: aplicada)?|aliq\.)$/,v=>{const m=v.match(/^(\d{1,3}(?:[.,]\d{1,4})?)\s*%?$/);const n=m?Number(m[1].replace(',','.')):NaN;return n>=0&&n<=100?n:null;}],
- ['iss_retido',/^(?:iss(?:qn)? retido|retencao do issqn)$/,v=>{const n=normalizar(v);return /^(?:2\s*-\s*)?(?:nao|nao retido)$/.test(n)?'nao':/^(?:1\s*-\s*)?(?:sim|retido)$/.test(n)?'sim':null;}],
+ ['iss_retido',/^(?:iss(?:qn)? retido|retencao do issqn|iss a reter)$/,v=>{const n=normalizar(v);return /^(?:2\s*-\s*)?(?:nao|nao retido)$/.test(n)?'nao':/^(?:1\s*-\s*)?(?:sim|retido)$/.test(n)?'sim':null;}],
  ['codigo_servico_municipal',/^codigo (?:do servico|municipal (?:do servico)?)$/,v=>/^[\d.-]+$/.test(v)?v:null],
- ['item_lista_servico',/^item (?:da )?lista (?:de )?servicos?$/,v=>/^\d{1,2}\.\d{2}$/.test(v)?v:null],
+ ['item_lista_servico',/^(?:item (?:da )?lista (?:de )?servicos?|item da lei 116)$/,v=>/^\d{1,2}\.\d{2}$/.test(v)?v:/^\d{4}$/.test(v)?`${v.slice(0,2)}.${v.slice(2)}`:null],
  ['discriminacao_servicos',/^(?:discriminacao|descricao) (?:dos? )?servicos?(?: prestados?)?$/,texto],
  ['municipio_prestacao',/^(?:municipio (?:da |de )?prestacao|local da prestacao(?: do servico)?)$/,texto],
  ['municipio_incidencia',/^municipio (?:da |de )?incidencia(?: do issqn)?$/,texto],
 ];
 function rotulo(s){
-  const n=normalizar(s).replace(/\s*\((?:r\$|%)\)\s*/g,'').replace(/\s*[:=]\s*$/,'').trim();
+  const n=normalizar(s).replace(/^\([=x+-]\)\s*/,'').replace(/\s*\((?:r\$|%)\)\s*/g,'').replace(/\s*[:=%]\s*$/,'').trim();
   const r=regras.find(([,re])=>re.test(n));return r?{campo:r[0],converter:r[2]}:null;
 }
 function papel(s){
@@ -69,6 +69,7 @@ function extrairPosicoes(paginas){
       const p=v? v.convertToViewportPoint(i.transform[4],i.transform[5]):[i.transform[4],-i.transform[5]];
       return {s:i.str.trim(),x:p[0],y:p[1],w:i.width||i.str.length*5,h:Math.max(6,Math.abs(i.height||i.transform[0]||10))};
     }).sort((a,b)=>a.y-b.y||a.x-b.x);
+    const cidadeCabecalho=itens.map(i=>i.s.match(/^MUNIC[IÍ]PIO DE (.{10,})$/i)?.[1]).find(Boolean);
     const linhas=[];
     for(const i of itens){let l=linhas.find(l=>Math.abs(l.y-i.y)<=2);if(!l){l={y:i.y,itens:[]};linhas.push(l);}l.itens.push(i);}
     const unidades=[];
@@ -88,6 +89,27 @@ function extrairPosicoes(paginas){
         unidades.push({...atual,r:label||rotulo(atual.s),inline:label?separado[2]:null,papel:papel(atual.s)});
       }
     }
+    // Reconstitui qualquer rótulo ou seção dividida verticalmente pelo PDF.
+    // Só aceita uma união que seja um título conhecido; texto livre continua intacto.
+    const fragmentos=[...unidades].sort((a,b)=>a.y-b.y||a.x-b.x);
+    const usados=new Set();
+    for(const inicio of fragmentos){
+      if(inicio.r||inicio.papel||usados.has(inicio))continue;
+      let partes=[inicio],anterior=inicio;
+      for(let n=0;n<2;n++){
+        const proximos=fragmentos.filter(i=>!i.r&&!i.papel&&!usados.has(i)&&!partes.includes(i)
+          &&i.y>anterior.y+2&&i.y-anterior.y<=Math.max(18,anterior.h*1.8)
+          &&Math.abs(i.x-inicio.x)<=Math.max(20,inicio.h*2));
+        const y=Math.min(...proximos.map(i=>i.y));
+        const proximo=proximos.filter(i=>Math.abs(i.y-y)<=2).sort((a,b)=>Math.abs(a.x-inicio.x)-Math.abs(b.x-inicio.x))[0];
+        if(!proximo)break;
+        partes.push(proximo);anterior=proximo;
+        const s=partes.map(i=>i.s).join(' '),r=rotulo(s),p=papel(s);
+        if(r||p){unidades.push({...inicio,s,y:proximo.y,w:Math.max(...partes.map(i=>i.x+i.w))-inicio.x,r,inline:null,papel:p});
+          partes.forEach(i=>usados.add(i));break;}
+      }
+    }
+    for(let i=unidades.length-1;i>=0;i--)if(usados.has(unidades[i]))unidades.splice(i,1);
     const headings=unidades.filter(i=>i.papel);
     function pessoa(i){
       const anteriores=headings.filter(h=>h.y<i.y-2);
@@ -104,12 +126,13 @@ function extrairPosicoes(paginas){
       if(!valor){
         const direita=unidades.filter(i=>Math.abs(i.y-label.y)<=2&&i.x>label.x+2).sort((a,b)=>a.x-b.x);
         const proximo=direita[0];
-        if(proximo&&!proximo.r&&!proximo.papel&&proximo.x-(label.x+label.w)<Math.max(60,label.h*6)){
+        if(proximo&&!proximo.r&&!proximo.papel&&proximo.x-(label.x+label.w)<Math.max(180,label.h*14)){
           const fim=direita.find(i=>i.r||i.papel)?.x??Infinity;
           valor=direita.filter(i=>i.x<fim).map(i=>i.s).join(' ');
         }else{
           const limiteX=direita.find(i=>i.r||i.papel)?.x??Infinity;
-          const abaixo=unidades.filter(i=>i.y>label.y+3&&i.y<=label.y+Math.max(26,label.h*3)&&i.x>=label.x-2&&i.x<limiteX-2);
+          const proximaSecao=Math.min(...unidades.filter(i=>i.papel&&i.y>label.y+2).map(i=>i.y),Infinity);
+          const abaixo=unidades.filter(i=>i.y>label.y+3&&i.y<proximaSecao-2&&i.y<=label.y+Math.max(34,label.h*3)&&i.x>=label.x-2&&i.x<limiteX-2);
           const y=Math.min(...abaixo.map(i=>i.y));
           const linha=abaixo.filter(i=>Math.abs(i.y-y)<=2).sort((a,b)=>a.x-b.x);
           if(linha.length&&!linha.some(i=>i.r||i.papel))valor=linha.map(i=>i.s).join(' ');
@@ -130,6 +153,16 @@ function extrairPosicoes(paginas){
       const origem={metodo:'posição e rótulo',pagina:indice+1,trecho:`${label.s} → ${valor||'não identificado'}`,confianca:'conferir'};
       const convertido=valor?label.r.converter(valor.trim()):null;
       registrar(campo,convertido,origem);
+      if(campo.endsWith('_endereco')&&convertido){
+        const pessoa=campo.slice(0,-'_endereco'.length);
+        const cep=convertido.match(/\bCEP\s*:\s*(\d{2}\.?\d{3}-?\d{3}|\d{8})\b/i);
+        if(cep)registrar(pessoa+'_cep',cep[1].replace(/\D/g,''),origem);
+        const endereco=convertido.replace(/\s*CEP\s*:\s*[\d.-]+\s*$/i,'');
+        const partes=endereco.match(/^(.+?),\s*(\d+[A-Za-z]?)(?:\s*-\s*(.+))?$/)
+          || endereco.match(/^(.+?)\s+(\d+[A-Za-z]?)(?:,\s*([^,]+))?$/);
+        if(partes){candidatos.get(campo).at(-1).valor=partes[1].trim();registrar(pessoa+'_numero',partes[2],origem);if(partes[3]&&!/^(?:N\/D|S\/N)(?:\b|\s*-)/i.test(partes[3]))registrar(pessoa+'_bairro',partes[3].trim(),origem);}
+        else if(endereco!==convertido)candidatos.get(campo).at(-1).valor=endereco;
+      }
       if(campo.endsWith('_municipio')&&convertido){
         const m=convertido.match(/^(.+?)\s*[-/]\s*([A-Z]{2})$/);
         if(m){candidatos.get(campo).at(-1).valor=m[1];registrar(campo.replace('_municipio','_uf'),m[2],origem);}
@@ -137,6 +170,14 @@ function extrairPosicoes(paginas){
       if(/^municipio_(prestacao|incidencia)$/.test(campo)&&convertido){
         const m=convertido.match(/^(.+?)\s*[-/]\s*([A-Z]{2})$/);
         if(m){candidatos.get(campo).at(-1).valor=m[1];registrar(campo.replace('municipio_','uf_'),m[2],origem);}
+      }
+    }
+    const cidadePrestador=candidatos.get('prestador_municipio');
+    if(cidadeCabecalho&&cidadePrestador?.length===1){
+      const atual=cidadePrestador[0].valor;
+      if(atual&&normalizar(atual).length>=10&&normalizar(cidadeCabecalho).startsWith(normalizar(atual)+' ')){
+        cidadePrestador[0].valor=cidadeCabecalho;
+        cidadePrestador[0].origem={...cidadePrestador[0].origem,trecho:`Município: ${atual}; cabeçalho: MUNICÍPIO DE ${cidadeCabecalho}`};
       }
     }
   });
@@ -166,6 +207,7 @@ function combinarPosicoes(posicional,generico){
   for(const c of posicional.vistos){delete dados[c];delete origens[c];}
   Object.assign(dados,posicional.dados);Object.assign(origens,posicional.origens);
   if(!Object.keys(posicional.origens).length)dados.modelo='generico';
-  return {dados,origens,avisos:[...new Set([...generico.avisos,...posicional.avisos])]};
+  const pendentes=generico.avisos.filter(aviso=>!Object.keys(posicional.origens).some(campo=>aviso.includes(campo)));
+  return {dados,origens,avisos:[...new Set([...pendentes,...posicional.avisos])]};
 }
 module.exports={extrairPosicoes,lerPosicoes,combinarPosicoes};

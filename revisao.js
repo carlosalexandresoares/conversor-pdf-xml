@@ -1,9 +1,34 @@
+// API da revisao: mostra os dados, sugere campos pelo texto e salva edicoes validadas.
 const express = require("express");
 const { preencherCodigosMunicipios } = require("./municipios");
 const db = require("./database");
 
 const router = express.Router();
 
+// Sugestões a partir do texto armazenado, sem alterar a revisão salva.
+router.get('/:id/sugestoes-texto', async (req,res)=>{
+  const id=validarId(req.params.id);
+  if(!id)return res.status(400).json({erro:'ID inválido.'});
+  try{
+    const doc=db.prepare('SELECT texto_extraido,processamento,caminho_pdf,modelo FROM documentos WHERE id=?').get(id);
+    if(!doc)return res.status(404).json({erro:'Documento não encontrado.'});
+    if(['fila','processando'].includes(doc.processamento))return res.status(409).json({erro:'Aguarde a leitura terminar.'});
+    if(!doc.texto_extraido?.trim())return res.status(422).json({erro:'O documento ainda não tem texto extraído. Tente a leitura novamente.'});
+    let extracao;
+    if(['generico','generico_posicional'].includes(doc.modelo)&&doc.caminho_pdf){
+      try{
+        const fs=require('node:fs/promises');
+        const {caminhoPdf}=require('./processamento');
+        const posicoes=await require('./extrator-posicional').lerPosicoes(await fs.readFile(caminhoPdf(doc)));
+        extracao=require('./extrator-posicional').combinarPosicoes(posicoes,require('./extrator-generico').extrairGenerico(doc.texto_extraido));
+      }catch(erro){console.error(`Sugestões por posição ${id}: ${erro.message}`);}
+    }
+    const dados=require('./processamento').interpretar(doc.texto_extraido,extracao);
+    res.json({dados});
+  }catch(erro){console.error(erro);res.status(500).json({erro:'Não foi possível interpretar o texto completo.'});}
+});
+
+// Lista de campos aceitos como texto na revisão manual.
 const camposTexto = [
   "rps_status",
   "prestador_codigo_municipio",
@@ -56,6 +81,7 @@ const camposTexto = [
 "incentivo_fiscal_xml",
 ];
 
+// Valores monetários são validados e armazenados em centavos.
 const camposDinheiro = [
   "valor_servicos_centavos",
   "valor_liquido_centavos",
@@ -102,6 +128,7 @@ function converterDinheiro(valor, campo) {
   return centavos;
 }
 
+// Entrega o documento, versão atual e origens para montar o formulário.
 router.get("/:id/revisao", (req, res) => {
   const id = validarId(req.params.id);
 
@@ -137,6 +164,7 @@ router.get("/:id/revisao", (req, res) => {
   }
 });
 
+// Valida a edição e rejeita versões desatualizadas antes de salvar.
 router.put("/:id/revisao", (req, res) => {
   const id = validarId(req.params.id);
 

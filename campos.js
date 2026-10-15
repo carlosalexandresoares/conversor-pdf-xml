@@ -1,3 +1,4 @@
+// Modulo legado da API de campos; mantido para compatibilidade com instalacoes antigas.
 const express = require("express");
 const db = require("./database");
 const { extrairCampos } = require("./extrator");

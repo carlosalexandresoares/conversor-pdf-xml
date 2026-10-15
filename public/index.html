@@ -10,6 +10,7 @@
 </head>
 
 <body>
+  <!-- Navegação lateral e indicador de documentos. -->
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Folha, início" ><span class="brand-icon">c.</span><span id="teste123">Conversor<span
           class="brand-sub">DOCUMENTOS FISCAIS</span></span></a>
@@ -24,6 +25,7 @@
     <div class="sidebar-footer">PDF → XML<span>VERSÃO 2.0</span></div>
   </aside>
   <div class="app-shell">
+    <!-- Área principal: resumo, importação e biblioteca de PDFs. -->
     <header class="topbar"><span>Área de trabalho <span class="crumb">/</span> <strong>Documentos</strong></span><span
         id="conexao" class="connection" role="status">Conectando…</span></header>
     <main>
@@ -43,6 +45,7 @@
         <div class="metric"><span>Revisões salvas</span><strong id="revisados">0</strong><small>dados conferidos por
             você</small></div>
       </div>
+      <!-- Envio em lote; app.js preenche os resultados em #fila-envio. -->
       <section class="upload-card" aria-labelledby="upload-titulo">
         <div class="section-kicker">01 <span>IMPORTAR</span></div>
         <form id="form-upload">
@@ -63,6 +66,7 @@
         <ol id="fila-envio" class="upload-results" aria-live="polite"></ol>
       </section>
       <p id="mensagem" class="notice" role="status" hidden></p>
+      <!-- Tabela, filtros, seleção e ações da biblioteca. -->
       <section class="documents-card" id="documentos-secao" aria-labelledby="documentos-titulo">
         <div class="documents-header">
           <div>
@@ -115,6 +119,7 @@
         fiscal depende da conferência e dos requisitos de importação.</p>
     </main>
   </div>
+  <!-- Revisão: original à esquerda; campos editáveis e texto extraído à direita. -->
   <dialog id="revisao-dialog" aria-labelledby="titulo-revisao">
     <header class="dialog-header">
       <div><span class="eyebrow">CONFERÊNCIA DO DOCUMENTO</span>
@@ -142,10 +147,12 @@
         </form>
         <pre id="texto-extraido" hidden></pre>
         <button type="button" class="text-btn" id="tentar-leitura" hidden>Tentar leitura novamente</button>
+        <button type="button" class="btn secondary" id="preencher-texto">Preencher pelo texto</button>
       </div>
     </div>
   </dialog>
 
+  <!-- Créditos e script responsável pela interação da página. -->
   <footer class="site-footer" aria-label="Créditos do site">
   <div class="site-footer__content">
     <span>Desenvolvido por <strong>Carlos</strong> </span>

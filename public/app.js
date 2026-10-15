@@ -1,4 +1,9 @@
 'use strict';
+// Interface principal: estado da biblioteca, envio, revisão e exportação.
+// Os IDs consultados aqui são definidos em index.html; os campos vêm de campos.json.
+// A revisão só é persistida quando o usuário aciona Salvar revisão.
+
+// Estado compartilhado pela tela e utilitários de requisição/renderização.
 const $=s=>document.querySelector(s);
 let documentos=[],selecionados=new Set(),pagina=1,arquivos=[],enviando=false,baixando=false,revisao=null,alterado=false,salvando=false,carregando=false;
 let definicoes=[];
@@ -28,6 +33,7 @@ function status(doc){
   if(doc.revisado_em)return ['Revisão salva','green'];
   return ['Para revisar',''];
 }
+// Biblioteca: filtros, seleção, paginação e atualização periódica dos documentos.
 function filtrados(){
   const termo=$('#busca').value.trim().toLocaleLowerCase('pt-BR');const filtro=$('#filtro').value;
   return documentos.filter(d=>{
@@ -98,6 +104,7 @@ async function carregar(){
 for(const id of ['#busca','#filtro'])$(id).addEventListener('input',()=>{pagina=1;renderizar();});
 $('#anterior').addEventListener('click',()=>{pagina--;renderizar();});$('#proxima').addEventListener('click',()=>{pagina++;renderizar();});
 $('#selecionar-todos').addEventListener('change',()=>{const marcar=$('#selecionar-todos').checked;for(const d of filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina))marcar?selecionados.add(d.id):selecionados.delete(d.id);renderizar();});
+// Importação: escolhe arquivos, recebe arrastar/soltar e envia cada PDF do lote.
 function escolherArquivos(itens){
   if(enviando)return;
   if(itens.length>50){notificar('Selecione até 50 PDFs por lote.',true);return;}
@@ -129,6 +136,7 @@ $('#form-upload').addEventListener('submit',async e=>{
   enviando=false;$('#enviar').disabled=false;$('#enviar').textContent='Importar arquivos';$('#pdf').disabled=false;$('#pdf').value='';arquivos=[];$('#upload-actions').hidden=true;
   notificar(`Lote concluído: ${salvos} novo(s), ${duplicados} já cadastrado(s), ${falhas} falha(s). A leitura continua no servidor.`,falhas>0);
 });
+// Ações da biblioteca: exclusão confirmada e download individual ou em ZIP.
 $('#excluir-selecionado').addEventListener('click',async()=>{
   if(excluindo||baixando||!selecionados.size)return;
   const ids=[...selecionados];
@@ -157,6 +165,7 @@ $('#baixar-selecionado').addEventListener('click',async()=>{
     notificar(ids.length===1?'XML baixado com os dados disponíveis. Confira o documento antes da importação fiscal.':'ZIP baixado. Consulte também o relatório de exportação incluído no arquivo.');
   }catch(erro){notificar(erro.message,true);}finally{baixando=false;atualizarAcoes();}
 });
+// Revisão: gera o formulário a partir das definições, mostra o PDF e salva edições.
 function grupo(campo){
   if(campo.startsWith('prestador_')||campo.endsWith('_prestador'))return 'Prestador';
   if(campo.startsWith('tomador_')||campo.endsWith('_tomador'))return 'Tomador';
@@ -201,6 +210,7 @@ async function abrirRevisao(id,atualizacao=false){
   $('#aviso-revisao').textContent=avisos.join('\n');$('#aviso-revisao').hidden=!avisos.length;
   $('#salvar-revisao').disabled=['fila','processando'].includes(resultado.processamento);
   $('#tentar-leitura').hidden=processando||!!resultado.dados.revisado_em;
+  $('#preencher-texto').disabled=processando||!resultado.texto_extraido;
   $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);trocarAba(false);
   for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando;
   if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
@@ -234,4 +244,32 @@ $('#tentar-leitura').addEventListener('click',async()=>{
   if(!revisao||alterado){$('#mensagem-revisao').textContent='Salve ou descarte suas alterações antes de tentar novamente.';return;}
   try{await json(`/api/documentos/${revisao.id}/processar`,{method:'POST'});fechar();await carregar();notificar('Documento adicionado à fila de leitura.');}catch(erro){$('#mensagem-revisao').textContent=erro.message;}
 });
+// Sugestões automáticas preservam qualquer campo já alterado manualmente na tela.
+$('#preencher-texto').addEventListener('click',async()=>{
+  if(!revisao||salvando)return;
+  const atual=revisao;$('#preencher-texto').disabled=true;
+  try{
+    const {dados}=await json(`/api/documentos/${atual.id}/sugestoes-texto`);
+    if(revisao!==atual||salvando)return;
+    let quantidade=0;
+    for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea')){
+      if(campo.disabled||dados[campo.name]==null)continue;
+      const origem=atual.dados.origens?.[campo.name];
+      if(origem?.metodo==='revisão manual'&&campo.value.trim())continue;
+      const valor=dados[campo.name];
+      const antigo=atual.dados[campo.name];
+      const formatar=v=>v==null?'':campo.name.endsWith('_centavos')?(v/100).toFixed(2).replace('.',','):String(v);
+      if(campo.value.trim()&&campo.value!==formatar(antigo))continue;
+      const novo=formatar(valor);
+      if(campo.value===novo)continue;
+      campo.value=novo;
+      quantidade++;
+    }
+    if(quantidade){alterado=true;trocarAba(false);}
+    $('#mensagem-revisao').textContent=quantidade?`${quantidade} campo(s) preenchido(s) ou corrigido(s) pelo texto. Confira e clique em Salvar revisão.`:'Nenhum campo pôde ser preenchido com segurança a partir do texto.';
+    if(dados.avisos?.length){$('#aviso-revisao').hidden=false;$('#aviso-revisao').textContent=dados.avisos.join('\n');}
+  }catch(erro){if(revisao===atual)$('#mensagem-revisao').textContent=erro.message;}
+  finally{if(revisao===atual)$('#preencher-texto').disabled=false;}
+});
+// Mantém status e resultados da fila atualizados enquanto a página está visível.
 carregar();setInterval(()=>{if(!document.hidden)carregar();},2500);

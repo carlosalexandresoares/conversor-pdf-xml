@@ -1,3 +1,4 @@
+// Modulo legado de pendencias; nao e montado pelo servidor atual.
 const express = require("express");
 const db = require("./database");
 const { preencherCodigosMunicipios } = require("./municipios");

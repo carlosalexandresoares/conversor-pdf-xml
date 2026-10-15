@@ -1,3 +1,4 @@
+// Modulo legado de leitura; o fluxo atual usa processamento.js e leitor-worker.js.
 const express = require("express");
 const fs = require("node:fs/promises");
 const path = require("node:path");

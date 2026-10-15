@@ -1,3 +1,4 @@
+// Consulta a base local de municipios e codigos IBGE.
 
 // Fonte: API de Localidades do IBGE; cópia local de 09/10/2026.
 const municipios = require("./municipios-ibge.json");
