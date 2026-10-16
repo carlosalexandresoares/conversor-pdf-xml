@@ -42,6 +42,8 @@ Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige in
 
 ## Como usar
 
+- Use **Modo noturno** no canto superior direito para escurecer a interface. O botão alterna de volta para **Modo claro** e lembra sua escolha neste navegador. O documento PDF mantém suas cores originais.
+
 - Na revisão, **Preencher pelo texto** reaproveita o texto completo já armazenado e, para layouts genéricos, consulta novamente a posição dos campos no PDF original. Preenche campos vazios e corrige sugestões automáticas antigas quando o campo ainda não foi editado na tela. Preserva valores digitados manualmente e não salva automaticamente: confira e use **Salvar revisão**. A leitura por contexto reconhece nomes sem rótulo dentro dos blocos das partes e totais com outras denominações. Trechos de OCR corrompidos continuam exigindo conferência no PDF.
 
 - Escolha ou arraste até 50 PDFs de uma vez; clique em **Importar arquivos**.
