@@ -36,7 +36,7 @@ test('Cabeçalhos em colunas e valores na linha seguinte',()=>{
  assert.equal(d.nome_prestador,'Empresa Colunas');assert.equal(d.nome_tomador,'Cliente Colunas');
  assert.equal(d.tomador_endereco,'Rua Exemplo, 10');assert.equal(d.valor_servicos_centavos,200000);assert.equal(d.valor_iss_centavos,10000);
 });
-test('Exclusão remove PDF e revisão, valida ID e protege documentos em leitura',async()=>{
+test('Lixeira preserva PDF e revisão, permite restaurar e protege documentos em leitura',async()=>{
  const nome='exclusao-teste.pdf';const arquivo=path.join(process.env.CONVERSOR_UPLOAD_DIR,nome);
  fs.writeFileSync(arquivo,'%PDF-teste');
  const id=Number(db.prepare("INSERT INTO documentos (nome_arquivo,caminho_pdf,processamento,dados_json) VALUES (?,?,'processando',?)").run(nome,`uploads/${nome}`,JSON.stringify({revisado_em:'2026-10-13',numero_nota:'123'})).lastInsertRowid);
@@ -46,10 +46,15 @@ test('Exclusão remove PDF e revisão, valida ID e protege documentos em leitura
  assert.ok(fs.existsSync(arquivo));assert.ok(db.prepare('SELECT id FROM documentos WHERE id=?').get(id));
  db.prepare("UPDATE documentos SET processamento='pronto' WHERE id=?").run(id);
  assert.equal((await excluir(id)).status,200);
- assert.equal(fs.existsSync(arquivo),false);
- assert.equal(db.prepare('SELECT id FROM documentos WHERE id=?').get(id),undefined);
+ assert.equal(fs.existsSync(arquivo),true);
+ assert.ok(db.prepare('SELECT excluido_em FROM documentos WHERE id=?').get(id).excluido_em);
+ const lixeira=await(await fetch(base+'/api/documentos?pagina=1&filtro=lixeira')).json();
+ assert.ok(lixeira.documentos.some(doc=>doc.id===id));
  assert.equal((await excluir(id)).status,404);
  assert.equal((await fetch(base+`/api/documentos/${id}/revisao`)).status,404);
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml?rascunho=1`)).status,404);
+ assert.equal((await fetch(base+`/api/documentos/${id}/restaurar`,{method:'POST'})).status,200);
+ assert.equal((await fetch(base+`/api/documentos/${id}/revisao`)).status,200);
  const ausente=Number(db.prepare("INSERT INTO documentos (nome_arquivo,caminho_pdf,processamento) VALUES (?,?,'erro')").run(nome,`uploads/${nome}`).lastInsertRowid);
  assert.equal((await excluir(ausente)).status,200);
 });
@@ -70,7 +75,8 @@ test('PDF Qive preenche a revisão e exporta os valores extraídos', {timeout:60
  assert.equal(revisao.dados.valor_liquido_centavos,37699);assert.equal(revisao.dados.valor_iss_centavos,754);
  assert.equal(revisao.dados.valor_ibs_centavos,36);assert.equal(revisao.dados.valor_cbs_centavos,320);
  assert.equal(revisao.dados.tomador_inscricao_municipal,undefined);
- const xml=await(await fetch(base+`/api/documentos/${id}/xml`)).text();
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml`)).status,409);
+ const xml=await(await fetch(base+`/api/documentos/${id}/xml?rascunho=1`)).text();
  assert.ok(xml.includes('<ValorServicos>376.99</ValorServicos>'));assert.ok(xml.includes('<ValorIss>7.54</ValorIss>'));
 });
 test('Layout inédito com ordem interna invertida chega preenchido à revisão', {timeout:60000},async()=>{
@@ -107,12 +113,42 @@ test('Upload, duplicidade, falha isolada, revisão concorrente e ZIP', {timeout:
  assert.equal((await fetch(base+`/api/documentos/${id}/revisao`,options)).status,200);
  assert.equal((await fetch(base+`/api/documentos/${id}/revisao`,options)).status,409);
  assert.equal((await fetch(base+`/api/documentos/${id}/processar`,{method:'POST'})).status,409);
- const xml=await (await fetch(base+`/api/documentos/${id}/xml`)).text();assert.ok(xml.includes('<ValorServicos>0.00</ValorServicos>'));assert.ok(xml.includes('Cliente revisado'));
- assert.equal((await fetch(base+`/api/documentos/${invalido.dados.id}/xml`)).status,200);
- const zip=await fetch(base+'/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id,invalido.dados.id]})});
- assert.equal(zip.status,200);const bytes=Buffer.from(await zip.arrayBuffer());assert.equal(bytes.subarray(0,2).toString(),'PK');assert.ok(bytes.includes(Buffer.from('relatorio-exportacao.txt')));assert.ok(bytes.includes(Buffer.from(`documento-${id}-abrasf.xml`)));
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml`)).status,409);
+ const xml=await (await fetch(base+`/api/documentos/${id}/xml?rascunho=1`)).text();assert.ok(xml.includes('<ValorServicos>0.00</ValorServicos>'));assert.ok(xml.includes('Cliente revisado'));
+ assert.equal((await fetch(base+`/api/documentos/${invalido.dados.id}/xml`)).status,409);
+ assert.equal((await fetch(base+`/api/documentos/${invalido.dados.id}/xml?rascunho=1`)).status,409);
+ const zip=await fetch(base+'/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id],rascunho:true})});
+ assert.equal(zip.status,200);const bytes=Buffer.from(await zip.arrayBuffer());assert.equal(bytes.subarray(0,2).toString(),'PK');assert.ok(bytes.includes(Buffer.from('relatorio-exportacao.txt')));assert.ok(bytes.includes(Buffer.from(`documento-${id}-abrasf-RASCUNHO.xml`)));
  assert.equal((await fetch(base+'/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[9999]})})).status,404);
  const manual=await(await fetch(base+`/api/documentos/${invalido.dados.id}/revisao`)).json();
  const salvarManual=await fetch(base+`/api/documentos/${invalido.dados.id}/revisao`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({versao:manual.versao,campos:{numero_nota:'123'}})});
  assert.equal(salvarManual.status,200);
+});
+test('Revisão recalcula avisos e aprovação controla a exportação',async()=>{
+ const dados={numero_nota:'42',codigo_verificacao:'ABCD1234',data_emissao:'2026-10-01',competencia_xml:'2026-10-01',cnpj_prestador:'11111111111111',nome_prestador:'Prestador',cnpj_tomador:'12345678909',nome_tomador:'Cliente',valor_servicos_centavos:10000,base_calculo_centavos:10000,aliquota_percentual:5,valor_iss_centavos:9900,item_lista_servico:'01.05',incentivo_fiscal_xml:'2',iss_retido:'nao',avisos:[]};
+ const id=Number(db.prepare("INSERT INTO documentos (nome_arquivo,processamento,dados_json) VALUES (?,'pronto',?)").run('aprovacao.pdf',JSON.stringify(dados)).lastInsertRowid);
+ const salvar=async(campos)=>{
+   const atual=await(await fetch(base+`/api/documentos/${id}/revisao`)).json();
+   return fetch(base+`/api/documentos/${id}/revisao`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({versao:atual.versao,campos})});
+ };
+ assert.equal((await salvar({nome_prestador:'Prestador'})).status,200);
+ let atual=await(await fetch(base+`/api/documentos/${id}/revisao`)).json();
+ assert.ok(atual.dados.avisos.some(v=>v.includes('dígitos verificadores')));
+ assert.ok(atual.dados.avisos.some(v=>v.includes('ISS informado')));
+ const acao=async rota=>{const atual=await(await fetch(base+`/api/documentos/${id}/revisao`)).json();return fetch(base+`/api/documentos/${id}/${rota}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({versao:atual.versao})});};
+ assert.equal((await acao('aprovar')).status,409);
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml`)).status,409);
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml?rascunho=1`)).status,200);
+ assert.equal((await salvar({cnpj_prestador:'11222333000181',valor_iss_centavos:'5,00'})).status,200);
+ atual=await(await fetch(base+`/api/documentos/${id}/revisao`)).json();
+ assert.ok(!atual.dados.avisos.some(v=>v.includes('dígitos verificadores')||v.includes('ISS informado')));
+ assert.equal((await acao('aprovar')).status,200);
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml`)).status,200);
+ assert.equal((await salvar({nome_prestador:'Alterado'})).status,409);
+ assert.equal((await acao('reabrir')).status,200);
+ assert.equal((await fetch(base+`/api/documentos/${id}/xml`)).status,409);
+ const lista=await(await fetch(base+'/api/documentos?pagina=1&filtro=revisados&busca=aprovacao')).json();
+ assert.ok(lista.total>=1);assert.ok(lista.documentos.some(d=>d.id===id));assert.ok(lista.documentos.length<=25);
+ const historico=await(await fetch(base+`/api/documentos/${id}/historico`)).json();
+ assert.ok(historico.some(e=>e.acao==='aprovado'));
 });

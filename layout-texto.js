@@ -1,4 +1,5 @@
 // Reorganiza rótulos e valores sem depender do município emissor.
+const {ehRotuloCatalogado}=require('./catalogo-rotulos');
 const normalizar = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const rotulo = /^(?:(?:n[uú]mero|n[º°o.]*) (?:da |do )?(?:nota|nfs-?e|rps)|c[oó]digo (?:de )?(?:verifica[çc][ãa]o|autenticidade)|data.*emiss[ãa]o|compet[eê]ncia(?: da nfs-e)?|(?:nome\s*\/\s*)?raz[ãa]o social|nome|(?:cpf\s*\/\s*cnpj|cnpj\s*\/\s*cpf|cnpj|cpf)|inscri[çc][ãa]o municipal|endere[çc]o|logradouro|bairro|munic[ií]pio(?:\s*\/\s*uf)?|cidade|uf|cep|e-?mail|telefone|valor.*|base de c[aá]lculo|al[ií]quota(?:\s*\(%\))?|iss(?:qn)?|pis|cofins|inss|irrf|csll|ibs|cbs)$/i;
 function prepararLayout(texto) {
@@ -8,18 +9,18 @@ function prepararLayout(texto) {
     const linha = linhas[i].trim();
     const colunas = linha.split(/\t+| {2,}/).map(s => s.trim()).filter(Boolean);
     const valores = (linhas[i + 1] || '').trim().split(/\t+| {2,}/).map(s => s.trim()).filter(Boolean);
-    if (colunas.length > 1 && colunas.every(s => rotulo.test(s.replace(/:$/, ''))) && valores.length === colunas.length && !valores.some(s => rotulo.test(s))) {
+    if (colunas.length > 1 && colunas.every(s => ehRotuloCatalogado(s)||rotulo.test(s.replace(/:$/, ''))) && valores.length === colunas.length && !valores.some(s => ehRotuloCatalogado(s)||rotulo.test(s))) {
       saida.push(...colunas.map((s, j) => `${s.replace(/:$/, '')}: ${valores[j]}`));
       i++;
       continue;
     }
     // Alguns geradores serializam todos os títulos antes de todos os valores.
-    if (rotulo.test(linha.replace(/:$/, ''))) {
+    if (ehRotuloCatalogado(linha)||rotulo.test(linha.replace(/:$/, ''))) {
       let fim = i;
-      while (fim < linhas.length && rotulo.test(linhas[fim].trim().replace(/:$/, ''))) fim++;
+      while (fim < linhas.length && (ehRotuloCatalogado(linhas[fim])||rotulo.test(linhas[fim].trim().replace(/:$/, '')))) fim++;
       const quantidade = fim - i;
       const itens = linhas.slice(fim, fim + quantidade).map(s => s.trim());
-      if (quantidade > 1 && itens.length === quantidade && itens.every(s => s && !rotulo.test(s) && !/^(prestador|tomador|discriminacao|valores)/.test(normalizar(s)))) {
+      if (quantidade > 1 && itens.length === quantidade && itens.every(s => s && !ehRotuloCatalogado(s)&&!rotulo.test(s) && !/^(prestador|tomador|discriminacao|valores)/.test(normalizar(s)))) {
         saida.push(...linhas.slice(i, fim).map((s, j) => `${s.trim().replace(/:$/, '')}: ${itens[j]}`));
         i = fim + quantidade - 1;
         continue;

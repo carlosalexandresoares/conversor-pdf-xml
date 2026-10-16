@@ -1,11 +1,10 @@
-function pdfPosicional(){
- const itens=[
+function pdfPosicional(itens=[
   ['Número da NFS-e',20,760],['Competência',230,760],['772',20,744],['10/2026',230,744],
   ['Identificação do fornecedor',20,700],['CPF / CNPJ',20,680],['Razão social',230,680],
   ['12.345.678/0001-90',20,664],['Empresa de Teste',230,664],
   ['Cliente',20,620],['CPF',20,600],['Nome empresarial',230,600],['123.456.789-09',20,584],['Cliente de Teste',230,584],
   ['Valores',20,540],['Valor dos serviços (R$)',20,520],['Valor do ISS (R$)',230,520],['1.234,56',100,504],['24,69',300,504],
- ];
+ ]){
  // Ordem interna invertida: a leitura deve obedecer às posições na página.
  const stream=itens.reverse().map(([s,x,y])=>`BT /F1 10 Tf 1 0 0 1 ${x} ${y} Tm (${s.replace(/[\\()]/g,'\\$&')}) Tj ET`).join('\n');
  const objetos=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',`<< /Length ${Buffer.byteLength(stream,'latin1')} >>\nstream\n${stream}\nendstream`];

@@ -1,5 +1,6 @@
 // Extração determinística: rótulos, tipos de valor e proximidade na página.
 const {organizarDocumento,areaTrechos}=require('./layout-documento');
+const {canonicalizarRotulo}=require('./catalogo-rotulos');
 const normalizar=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const texto=v=>v.trim()&&!/^[-*]+$/.test(v.trim())?v.trim():null;
 const municipioServico=v=>/^[\p{L}][\p{L}\s.'-]+\s*[-/]\s*[A-Z]{2}$/iu.test(v.trim())?v.trim():null;
@@ -49,7 +50,7 @@ const regras=[
  ['municipio_incidencia',/^municipio (?:da |de )?incidencia(?: do issqn)?$/,municipioServico],
 ];
 function rotulo(s){
-  const n=normalizar(s).replace(/^\([=x+-]\)\s*/,'').replace(/\s*\((?:r\$|%)\)\s*/g,'').replace(/\s*r\$\s*$/,'').replace(/\s*[:=%]\s*$/,'').trim();
+  const n=canonicalizarRotulo(normalizar(s).replace(/^\([=x+-]\)\s*/,''));
   const r=regras.find(([,re])=>re.test(n));return r?{campo:r[0],converter:r[2]}:null;
 }
 function papel(s){

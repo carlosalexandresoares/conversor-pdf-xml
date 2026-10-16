@@ -1,5 +1,6 @@
 // Leitura conservadora por rotulos e contexto para layouts sem adaptador especifico.
 const { prepararLayout } = require('./layout-texto');
+const {padraoRotulos}=require('./catalogo-rotulos');
 const normalizar = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function extrairGenerico(original) {
   const texto = prepararLayout(original.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' '));
@@ -17,24 +18,24 @@ function extrairGenerico(original) {
   const sep = '[ \\t]*(?:\\(r\\$\\)|\\(%\\))?[ \\t]*:?[ \\t]*(?:\\n[ \\t]*)?';
   const dinheiro = v => { const n = Number(v.replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) && Number.isSafeInteger(Math.round(n*100)) ? Math.round(n*100) : null; };
   const moeda = '(?:r\\$[ \\t]*)?([0-9]+(?:\\.[0-9]{3})*,[0-9]{2})(?![0-9])';
-  buscar('numero_nota', texto, '(?:^|\\n)[ \\t]*(?:(?:numero|n[º°o.]*) (?:da |de )?(?:nota(?: fiscal)?|nfs-?e)|nfs-e (?:n[oº°.]|numero)|nota fiscal (?:de servicos )?(?:n[oº°.]|numero))'+sep+'([0-9]+)\\b');
-  buscar('codigo_verificacao', texto, '(?:codigo (?:de )?(?:verificacao|autenticidade))'+sep+'([a-z0-9][a-z0-9.\\-]{3,50})\\b');
-  buscar('data_emissao', texto, '(?:data (?:e hora )?(?:de )?emissao(?: da nfs-e)?|emissao da nfs-e)'+sep+'(\\d{2}/\\d{2}/\\d{4}(?:[ \\t]+\\d{2}:\\d{2}(?::\\d{2})?)?)', v => {
+  buscar('numero_nota', texto, '(?:^|\\n)[ \\t]*'+padraoRotulos('numero da nota')+sep+'([0-9]+)\\b');
+  buscar('codigo_verificacao', texto, padraoRotulos('codigo de verificacao')+sep+'([a-z0-9][a-z0-9.\\-]{3,50})\\b');
+  buscar('data_emissao', texto, padraoRotulos('data de emissao')+sep+'(\\d{2}/\\d{2}/\\d{4}(?:[ \\t]+\\d{2}:\\d{2}(?::\\d{2})?)?)', v => {
     const m=v.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
     const data=`${m[3]}-${m[2]}-${m[1]}`; const t=new Date(data+'T00:00:00Z');
     return !Number.isNaN(t.getTime()) && t.toISOString().slice(0,10)===data ? data+(m[4]?'T'+m[4]+(m[4].length===5?':00':''):'') : null;
   });
   buscar('competencia', texto, 'competencia'+sep+'((?:\\d{2}/)?\\d{2}/\\d{4})', v => { const p=v.split('/'); const mes=p[p.length-2]; return Number(mes)>=1 && Number(mes)<=12 ? `${p[p.length-1]}-${mes}` : null; });
   const dinheiroCampos = {
-    valor_servicos_centavos: 'valor (?:total (?:dos? )?)?(?:dos? )?servicos?',
-    valor_liquido_centavos: 'valor liquido(?: (?:da )?nota)?', base_calculo_centavos: 'base de calculo',
-    valor_total_nota_centavos: 'valor total da nota', valor_iss_centavos: '(?:valor (?:do )?)?iss(?:qn)?',
+    valor_servicos_centavos: padraoRotulos('valor dos servicos'),
+    valor_liquido_centavos: padraoRotulos('valor liquido'), base_calculo_centavos: padraoRotulos('base de calculo'),
+    valor_total_nota_centavos: padraoRotulos('valor total da nota'), valor_iss_centavos: padraoRotulos('valor do iss'),
     valor_pis_centavos: '(?:valor (?:do )?)?pis(?:/pasep)?', valor_cofins_centavos: '(?:valor (?:da )?)?cofins',
     valor_inss_centavos: '(?:valor (?:do )?)?inss', valor_ir_centavos: '(?:valor (?:do )?)?ir(?:rf)?',
     valor_csll_centavos: '(?:valor (?:da )?)?csll', valor_ibs_centavos: '(?:valor (?:do )?)?ibs', valor_cbs_centavos: '(?:valor (?:da )?)?cbs'
   };
   for (const [campo,rotulo] of Object.entries(dinheiroCampos)) buscar(campo,texto,'(?:^|\\n)[ \\t]*'+rotulo+sep+moeda,dinheiro);
-  buscar('aliquota_percentual',texto,'aliquota'+sep+'(\\d{1,3}(?:[.,]\\d{1,4})?)[ \\t]*%',v=>{const n=Number(v.replace(',','.'));return n<=100?n:null});
+  buscar('aliquota_percentual',texto,padraoRotulos('aliquota')+sep+'(\\d{1,3}(?:[.,]\\d{1,4})?)[ \\t]*%',v=>{const n=Number(v.replace(',','.'));return n<=100?n:null});
   buscar('item_lista_servico',texto,'(?:item (?:da )?lista (?:de )?servicos?|item lc ?116(?:/2003)?)'+sep+'(\\d{1,2}\\.\\d{2})');
   buscar('iss_retido',texto,'iss(?:qn)? (?:retido|a reter)'+sep+'(sim|nao)\\b',v=>normalizar(v));
   buscar('rps_numero',texto,'(?:numero (?:do )?rps|rps numero)'+sep+'(\\d+)\\b');

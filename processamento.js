@@ -8,6 +8,7 @@ const {extrairGenerico}=require('./extrator-generico');
 const {extrairDanfse}=require('./extrator-danfse');
 const {extrairQive}=require('./extrator-qive');
 const {preencherCodigosMunicipios}=require('./municipios');
+const {atualizarAvisosValidacao}=require('./validacao-extracao');
 const pastaUploads=process.env.CONVERSOR_UPLOAD_DIR || path.join(__dirname,'uploads');
 const fila=[]; const ativos=new Set(); let trabalhando=false;
 // Resolve somente nomes de arquivo dentro da pasta de uploads.
@@ -40,6 +41,7 @@ function interpretar(texto,extracao) {
   if(qive){
     const dados={...qive.dados,origens:qive.origens,avisos:qive.avisos};
     preencherCodigosMunicipios(dados);
+    atualizarAvisosValidacao(dados);
     return dados;
   }
   const generico=extrairGenerico(texto);
@@ -52,6 +54,7 @@ function interpretar(texto,extracao) {
   dados.origens=origens;
   dados.avisos=generico.avisos;
   preencherCodigosMunicipios(dados);
+  atualizarAvisosValidacao(dados);
   return dados;
 }
 // Consome a fila em ordem e só grava se a revisão não mudou durante a leitura.
@@ -61,7 +64,7 @@ async function consumir() {
     while(fila.length) {
       const id=fila.shift();
       try {
-        const doc=db.prepare('SELECT * FROM documentos WHERE id=?').get(id);
+        const doc=db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id);
         if(!doc)continue;
         const anterior=JSON.parse(doc.dados_json||'{}');
         if(anterior.revisado_em||doc.status==='conferido') {db.prepare("UPDATE documentos SET processamento='pronto' WHERE id=?").run(id);continue;}
@@ -101,7 +104,7 @@ function enfileirar(id) {
 }
 // Recupera leituras interrompidas quando o servidor volta a iniciar.
 function retomar() {
-  for(const doc of db.prepare("SELECT id,dados_json,processamento FROM documentos WHERE processamento IN ('novo','fila','processando')").all()) {
+  for(const doc of db.prepare("SELECT id,dados_json,processamento FROM documentos WHERE excluido_em IS NULL AND processamento IN ('novo','fila','processando')").all()) {
     const dados=JSON.parse(doc.dados_json||'{}');
     if(dados.modelo || dados.revisado_em) db.prepare("UPDATE documentos SET processamento='pronto' WHERE id=?").run(doc.id);
     else enfileirar(doc.id);

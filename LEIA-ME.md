@@ -1,6 +1,16 @@
-# Folha — Conversor PDF para XML, versão 2.0
+# Folha — Conversor PDF para XML, versão 2.0.1
 
 Aplicação local para armazenar PDFs de NFS-e, extrair dados, revisar e exportar XML no perfil baseado no exemplo ABRASF enviado para o projeto.
+
+## Correções da versão 2.0.1
+
+- Aprovar e reabrir uma revisão exigem a mesma versão dos dados que foi aberta na tela. Se outra pessoa salvar uma alteração, a ação será rejeitada até a revisão ser reaberta e conferida.
+- Após uma falha de leitura, preencha e salve os campos, confira o PDF e use **Concluir por revisão manual**. A ação exige campos essenciais válidos e não apaga o erro de leitura. Depois, use **Aprovar para exportar**. Alterações posteriores nos campos exigem nova conclusão manual.
+- Avisos de CPF/CNPJ e ISS de versões anteriores são recalculados sem remover os alertas de OCR e layout. Os avisos da tela são atualizados após salvar.
+- A verificação do backup exige que todos os PDFs referenciados no banco estejam no manifesto, inclusive os da lixeira, e confere a associação e os hashes dos arquivos.
+- O pacote de código é gerado com os arquivos atuais e exclui dados operacionais, dependências, histórico Git e backups.
+
+Esta atualização não inclui integração com IA nem homologação do XML no G5. O acesso compartilhado ainda usa a senha HTTP Basic descrita abaixo; nomes informados no login não são identidades verificadas individualmente.
 
 ## Atualização no Windows
 
@@ -17,7 +27,7 @@ Cada instalação usa seu próprio banco e PDFs. Para levar os documentos existe
 
 1. Pare o servidor com Ctrl+C e feche outras instâncias de Node deste projeto.
 2. Faça uma cópia da pasta atual, principalmente `data` e `uploads`, com o servidor parado. Não apague o banco nem os PDFs existentes.
-3. Extraia o conteúdo deste ZIP dentro da pasta do projeto e aceite substituir os arquivos de código. O pacote não contém banco, PDFs de clientes, `node_modules` nem `.git`.
+3. Gere o ZIP com `npm run pacote` e extraia o conteúdo de `dist/conversor-codigo.zip` dentro da pasta do projeto. Esse pacote exclui banco, PDFs de clientes, `node_modules` e `.git`.
 4. Abra o PowerShell na pasta do projeto e execute:
 
 ```powershell
@@ -38,9 +48,11 @@ Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige in
 - O envio ocorre arquivo a arquivo. Um arquivo inválido não cancela os demais. A leitura ocorre em uma fila no servidor.
 - PDFs duplicados são reconhecidos pelo conteúdo e não criam outro registro.
 - Marque um documento e use **Revisar dados**. O original aparece ao lado do formulário; em telas pequenas, use **Abrir PDF**.
-- Marque vários documentos e use **Baixar XMLs**. O ZIP contém um XML por registro e `relatorio-exportacao.txt`.
+- Salve a revisão e clique em **Aprovar para exportar** depois de conferir os dados. Uma revisão salva ainda não libera a exportação normal.
+- Marque vários documentos e use **Baixar XMLs**. O sistema mostra as pendências antes do download. Se faltar aprovação, só permite baixar um **RASCUNHO** identificado no nome; o ZIP contém um XML por registro e `relatorio-exportacao.txt`.
 - A seleção pode abranger várias páginas e permanece ao filtrar; o contador indica o total. A caixa no cabeçalho seleciona somente a página visível. Máximo de 100 documentos por exportação.
 - A revisão protege contra sobrescrita por outro computador. Ao receber conflito, feche e reabra a revisão para carregar a versão atual.
+- O histórico local registra importação, campos alterados na revisão, aprovação, reabertura, exportação e exclusão. A API `/api/documentos/ID/historico` permite consultar até 200 eventos recentes do documento. **Excluir** move o registro para a lixeira sem apagar o PDF; use o filtro **Lixeira** e **Restaurar** para recuperá-lo. Os documentos da lixeira também entram no backup.
 - Ao abrir a revisão durante a leitura, os campos aguardam o processamento e são preenchidos automaticamente, sem fechar a janela.
 - Dados revisados não são reextraídos automaticamente. O botão **Tentar leitura novamente** fica disponível nos documentos sem revisão salva, inclusive quando uma leitura anterior terminou com campos vazios. A nova leitura substitui a extração anterior.
 - Valores inexistentes ficam vazios. Zero só é exportado quando estiver efetivamente armazenado como zero. As datas não recebem dias arbitrários.
@@ -49,6 +61,8 @@ Requisito recomendado: Node.js 24, já usado no projeto. A instalação exige in
 ## Cobertura real e limites
 
 O sistema lê as posições dos textos na página em todos os PDFs, inclusive quando usa OCR. Reconhece nomes equivalentes de campos, títulos fragmentados, valores à direita ou abaixo e blocos de prestador/emitente/fornecedor e tomador/cliente/destinatário. Nos formatos conhecidos, os adaptadores continuam prioritários; a posição é anexada quando confirma o mesmo valor. Na revisão, **Ver no PDF** destaca o trecho encontrado e **Dados organizados** mostra um JSON dos campos atuais e suas origens. Tudo funciona localmente, sem API de IA ou nova dependência.
+
+Os sinônimos e abreviações de rótulos compartilhados ficam em [rotulos.json](./rotulos.json). A leitura também avisa quando CPF/CNPJ não passa na conferência dos dígitos verificadores ou quando ISS, base e alíquota divergem; esses avisos não corrigem nem apagam campos automaticamente. A conferência humana continua necessária, pois regras fiscais podem explicar diferenças entre os valores.
 
 Datas impossíveis, valores de formato inválido, traços e asteriscos não são convertidos em dados. Valores distintos para o mesmo campo entre páginas geram aviso e deixam esse campo vazio. Isso amplia a cobertura, mas não garante qualquer layout: títulos desconhecidos, posições ambíguas e documentos ilegíveis ainda exigem conferência. Cada PDF continua representando uma única nota. Os leitores específicos de Barueri, Santos, DANFSe, Qive e Campinas têm prioridade.
 
@@ -62,17 +76,28 @@ Cada PDF representa **uma nota**. Um PDF com várias notas não é dividido auto
 
 O PDF original e todo o texto extraído ficam armazenados. O XML contém apenas os campos mapeados para o perfil atual; não comporta automaticamente todas as informações visuais do PDF. IBS e CBS ficam no banco e na revisão, mas não são incluídos neste perfil de exportação.
 
-A exportação é liberada mesmo sem dados essenciais e durante o processamento, usando os valores já salvos naquele momento. Isso pode produzir XML incompleto. O programa não emite uma nova nota, não cria assinatura digital e não confirma autorização fiscal. A geração bem formada não equivale a validação XSD ABRASF 2.02, nem garante aceitação pelo G5. A importação dos novos XMLs no G5 ainda deve ser testada pelo responsável fiscal.
+A exportação normal exige leitura concluída, revisão salva, aprovação explícita e campos essenciais preenchidos: número, código de verificação, emissão, competência com data completa, identificação das partes, valor dos serviços, item da lista, ISS retido e incentivo fiscal. A exportação em rascunho exige leitura concluída e pode conter dados incompletos. O programa não emite uma nova nota, não cria assinatura digital e não confirma autorização fiscal. A geração bem formada não equivale a validação XSD ABRASF 2.02, nem garante aceitação pelo G5. A importação dos novos XMLs no G5 ainda deve ser testada pelo responsável fiscal.
 
 ## Dois computadores
 
-Execute o servidor em um único computador. No segundo, abra `http://IP-DO-SERVIDOR:3000`. Ambos devem estar na mesma rede e a porta 3000 deve estar permitida no firewall da rede privada. O terminal e o computador servidor precisam permanecer ligados. O banco SQLite deve ficar no disco local do servidor, e não em pasta de rede compartilhada.
+Por padrão o servidor escuta somente neste computador (`127.0.0.1`). Para acesso em uma rede confiável, defina `CONVERSOR_HOST=0.0.0.0`, `CONVERSOR_PASSWORD` e `CONVERSOR_DELETE_PASSWORD` antes de iniciar. Abra `http://IP-DO-SERVIDOR:3000` no segundo computador e use qualquer nome de usuário com a senha de acesso configurada. A senha separada de exclusão será solicitada ao mover documentos para a lixeira. Ambos devem estar na mesma rede e a porta 3000 deve estar permitida no firewall da rede privada. O terminal e o computador servidor precisam permanecer ligados. O banco SQLite deve ficar no disco local do servidor, e não em pasta de rede compartilhada.
 
-Esta versão não tem autenticação e é destinada à rede local confiável. Uma publicação na internet exige adicionar autenticação, HTTPS e uma estratégia de backup antes da exposição.
+No PowerShell do computador servidor, um exemplo é:
+
+```powershell
+$env:CONVERSOR_HOST = '0.0.0.0'
+$env:CONVERSOR_PASSWORD = 'sua-senha-de-acesso'
+$env:CONVERSOR_DELETE_PASSWORD = 'outra-senha-para-excluir'
+& .\INICIAR.bat
+```
+
+A senha usa autenticação HTTP Basic, adequada somente a uma rede local confiável ou atrás de um proxy com HTTPS, pois HTTP transmite credenciais sem criptografia. Ela não separa permissões por usuário. Não publique a porta diretamente na internet. O histórico de alterações registra o nome informado no login, mas esse nome não é uma identidade verificada individualmente.
 
 ## Backup e recuperação
 
-Com o servidor parado, copie `data` e `uploads` juntos para outro local. Para restaurar, pare o servidor e recoloque as duas pastas correspondentes ao mesmo backup. A migração da versão 2.0 apenas acrescenta colunas ao banco existente. Não exige apagar dados.
+Execute `npm run backup -- CAMINHO_DO_BACKUP` para copiar o banco por snapshot SQLite e os PDFs referenciados. Depois, execute `npm run verificar-backup -- CAMINHO_DO_BACKUP`: o comando abre uma cópia temporária do banco e confere integridade e hashes dos PDFs. Guarde o backup fora da pasta do projeto. Para restaurar, pare o servidor e recoloque `conversor.db` em `data` e os PDFs em `uploads`. A migração da versão 2.0 apenas acrescenta colunas ao banco existente. Não exige apagar dados.
+
+Para medir extração com documentos reais, crie um JSON com entradas `{"pdf":"caminho.pdf","esperado":{"numero_nota":"123","valor_servicos_centavos":10000}}` e execute `npm run avaliar-extracao -- amostra.json`. O relatório mostra acertos, vazios, erros e tempo por campo. O arquivo e os PDFs ficam na máquina local.
 
 Se aparecer “Sem conexão com o servidor”, veja o terminal, confira `http://localhost:3000/api/status` e verifique se há outra instância ocupando a porta. O código agora apresenta uma mensagem descritiva no lugar de simplesmente “Failed to fetch”; a mensagem anterior sozinha não permitia identificar sua causa original.
 

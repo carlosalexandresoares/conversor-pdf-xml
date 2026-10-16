@@ -2,28 +2,37 @@
 const express = require("express");
 const { preencherCodigosMunicipios } = require("./municipios");
 const db = require("./database");
+const {atualizarAvisosValidacao}=require('./validacao-extracao');
+const {avaliarExportacao}=require('./perfil-exportacao');
+const {registrar}=require('./auditoria');
+const {fork}=require('node:child_process');
+const path=require('node:path');
 
 const router = express.Router();
+function sugerirEmWorker(doc){
+  return new Promise((resolve,reject)=>{
+    const worker=fork(path.join(__dirname,'sugestoes-worker.js'),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv:['--max-old-space-size=512']});
+    let finalizado=false;
+    const concluir=(erro,dados)=>{if(finalizado)return;finalizado=true;clearTimeout(timer);worker.kill();erro?reject(erro):resolve(dados);};
+    const timer=setTimeout(()=>concluir(new Error('A leitura das sugestões excedeu 30 segundos.')),30000);
+    worker.on('message',m=>m.ok?concluir(null,m.dados):concluir(new Error(m.erro||'Leitura indisponível.')));
+    worker.on('error',concluir);
+    worker.on('exit',()=>concluir(new Error('A leitura das sugestões foi interrompida.')));
+    const {caminhoPdf}=require('./processamento');
+    worker.send({caminho:doc.caminho_pdf?caminhoPdf(doc):null,texto:doc.texto_extraido,modelo:doc.modelo});
+  });
+}
 
 // Sugestões a partir do texto armazenado, sem alterar a revisão salva.
 router.get('/:id/sugestoes-texto', async (req,res)=>{
   const id=validarId(req.params.id);
   if(!id)return res.status(400).json({erro:'ID inválido.'});
   try{
-    const doc=db.prepare('SELECT texto_extraido,processamento,caminho_pdf,modelo FROM documentos WHERE id=?').get(id);
+    const doc=db.prepare('SELECT texto_extraido,processamento,caminho_pdf,modelo FROM documentos WHERE id=? AND excluido_em IS NULL').get(id);
     if(!doc)return res.status(404).json({erro:'Documento não encontrado.'});
     if(['fila','processando'].includes(doc.processamento))return res.status(409).json({erro:'Aguarde a leitura terminar.'});
     if(!doc.texto_extraido?.trim())return res.status(422).json({erro:'O documento ainda não tem texto extraído. Tente a leitura novamente.'});
-    let extracao;
-    if(['generico','generico_posicional'].includes(doc.modelo)&&doc.caminho_pdf){
-      try{
-        const fs=require('node:fs/promises');
-        const {caminhoPdf}=require('./processamento');
-        const posicoes=await require('./extrator-posicional').lerPosicoes(await fs.readFile(caminhoPdf(doc)));
-        extracao=require('./extrator-posicional').combinarPosicoes(posicoes,require('./extrator-generico').extrairGenerico(doc.texto_extraido));
-      }catch(erro){console.error(`Sugestões por posição ${id}: ${erro.message}`);}
-    }
-    const dados=require('./processamento').interpretar(doc.texto_extraido,extracao);
+    const dados=await sugerirEmWorker(doc);
     res.json({dados});
   }catch(erro){console.error(erro);res.status(500).json({erro:'Não foi possível interpretar o texto completo.'});}
 });
@@ -139,7 +148,7 @@ router.get("/:id/revisao", (req, res) => {
   try {
     const documento = db.prepare(`
       SELECT id, nome_arquivo, dados_json, status, texto_extraido, processamento, erro_processamento
-      FROM documentos WHERE id = ?
+      FROM documentos WHERE id = ? AND excluido_em IS NULL
     `).get(id);
 
     if (!documento) {
@@ -148,6 +157,7 @@ router.get("/:id/revisao", (req, res) => {
 
     const dados = JSON.parse(documento.dados_json);
     preencherCodigosMunicipios(dados);
+    atualizarAvisosValidacao(dados);
 
     res.json({
       id: documento.id,
@@ -155,6 +165,7 @@ router.get("/:id/revisao", (req, res) => {
       dados,
       texto_extraido: documento.texto_extraido,
       processamento: documento.processamento,
+      status: documento.status,
       erro_processamento: documento.erro_processamento,
       versao: documento.dados_json,
     });
@@ -174,7 +185,7 @@ router.put("/:id/revisao", (req, res) => {
 
   try {
     const documento = db.prepare(`
-      SELECT dados_json, status, processamento FROM documentos WHERE id = ?
+      SELECT dados_json, status, processamento FROM documentos WHERE id = ? AND excluido_em IS NULL
     `).get(id);
 
     if (!documento) {
@@ -406,6 +417,7 @@ if (
     ].filter((campo) => dados[campo] == null);
 
     preencherCodigosMunicipios(dados);
+    atualizarAvisosValidacao(dados);
 
     const anteriores = JSON.parse(documento.dados_json);
     dados.origens = {...dados.origens};
@@ -413,6 +425,8 @@ if (
       if (JSON.stringify(dados[campo]) !== JSON.stringify(anteriores[campo])) dados.origens[campo] = {metodo: "revisão manual"};
     }
     dados.revisado_em = new Date().toISOString();
+    // Uma alteração posterior exige nova confirmação da conclusão manual.
+    if (Object.keys(entrada).some(campo => JSON.stringify(dados[campo]) !== JSON.stringify(anteriores[campo]))) delete dados.concluido_manual_em;
 
     const novoJson = JSON.stringify(dados);
 
@@ -452,14 +466,79 @@ if (
       });
     }
 
+    const alteracoes={};
+    for(const campo of Object.keys(entrada))if(JSON.stringify(anteriores[campo])!==JSON.stringify(dados[campo]))alteracoes[campo]={antes:anteriores[campo]??null,depois:dados[campo]??null};
+    registrar(req,id,'revisao_salva',{alteracoes});
+
     res.json({
-      mensagem: "Revisão salva. O XML usará estes dados.",
+      mensagem: "Revisão salva. Confira as pendências e aprove para exportar.",
       versao: novoJson,
     });
   } catch (erro) {
     console.error(erro);
     res.status(500).json({ erro: "Não foi possível salvar a revisão." });
   }
+});
+
+// Conclusão manual preserva a falha da leitura e exige conferência explícita.
+router.post('/:id/concluir-manual', (req, res) => {
+  const id = validarId(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'ID inválido.' });
+  const doc = db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id);
+  if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+  if (req.body?.versao !== doc.dados_json) return res.status(409).json({ erro: 'Os dados mudaram. Reabra a revisão antes de concluir.' });
+  if (doc.processamento !== 'erro' || doc.status === 'conferido') return res.status(409).json({ erro: 'A conclusão manual é permitida apenas para documentos com falha de leitura e sem aprovação.' });
+  const dados = JSON.parse(doc.dados_json || '{}');
+  if (!dados.revisado_em) return res.status(409).json({ erro: 'Salve a revisão antes de concluir manualmente.' });
+  dados.concluido_manual_em = new Date().toISOString();
+  const avaliacao = avaliarExportacao({ ...doc, dados_json: JSON.stringify(dados) });
+  if (avaliacao.pendencias.length) return res.status(409).json({ erro: 'Corrija as pendências antes de concluir manualmente.', pendencias: avaliacao.pendencias });
+  const atualizado = db.transaction(() => {
+    const resultado = db.prepare("UPDATE documentos SET dados_json=? WHERE id=? AND dados_json=? AND status='pendente' AND processamento='erro' AND excluido_em IS NULL").run(JSON.stringify(dados), id, doc.dados_json);
+    if (!resultado.changes) return false;
+    registrar(req, id, 'concluido_manualmente', { erro_leitura: doc.erro_processamento || null });
+    return true;
+  })();
+  if (!atualizado) return res.status(409).json({ erro: 'Os dados mudaram. Reabra a revisão antes de concluir.' });
+  res.json({ mensagem: 'Conferência manual concluída. Você já pode aprovar para exportar.', versao: JSON.stringify(dados) });
+});
+
+// Aprovação se refere exatamente à versão que foi conferida na tela.
+router.post('/:id/aprovar', (req, res) => {
+  const id = validarId(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'ID inválido.' });
+  const doc = db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id);
+  if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+  if (req.body?.versao !== doc.dados_json) return res.status(409).json({ erro: 'Os dados mudaram ou a versão não foi informada. Reabra a revisão antes de aprovar.' });
+  const avaliacao = avaliarExportacao(doc);
+  if (avaliacao.pendencias.length) return res.status(409).json({ erro: 'Corrija as pendências antes de aprovar.', pendencias: avaliacao.pendencias });
+  if (doc.status === 'conferido') return res.json({ mensagem: 'Documento já aprovado.' });
+  const dados = { ...avaliacao.dados, aprovado_em: new Date().toISOString() };
+  const resultado = db.prepare("UPDATE documentos SET status='conferido', dados_json=? WHERE id=? AND dados_json=? AND status='pendente'").run(JSON.stringify(dados), id, doc.dados_json);
+  if (!resultado.changes) return res.status(409).json({ erro: 'Os dados mudaram. Reabra a revisão.' });
+  registrar(req,id,'aprovado');
+  res.json({ mensagem: 'Documento aprovado para exportação.', aprovado_em: dados.aprovado_em });
+});
+
+router.post('/:id/reabrir', (req, res) => {
+  const id = validarId(req.params.id);
+  if (!id) return res.status(400).json({ erro: 'ID inválido.' });
+  const doc = db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id);
+  if (!doc) return res.status(404).json({ erro: 'Documento não encontrado.' });
+  if (req.body?.versao !== doc.dados_json) return res.status(409).json({ erro: 'Os dados mudaram. Reabra a revisão antes de remover a aprovação.' });
+  if (doc.status !== 'conferido') return res.json({ mensagem: 'Documento já está aberto para revisão.' });
+  const dados = JSON.parse(doc.dados_json || '{}');
+  delete dados.aprovado_em;
+  db.prepare("UPDATE documentos SET status='pendente', dados_json=? WHERE id=? AND status='conferido'").run(JSON.stringify(dados), id);
+  registrar(req,id,'aprovacao_removida');
+  res.json({ mensagem: 'Aprovação removida. Revise e aprove novamente após as alterações.' });
+});
+
+router.get('/:id/historico', (req,res)=>{
+  const id=validarId(req.params.id);
+  if(!id)return res.status(400).json({erro:'ID inválido.'});
+  const eventos=db.prepare('SELECT id,acao,ator,detalhes_json,criado_em FROM eventos_documento WHERE documento_id=? ORDER BY id DESC LIMIT 200').all(id);
+  res.json(eventos.map(({detalhes_json,...evento})=>({...evento,detalhes:JSON.parse(detalhes_json)})));
 });
 
 module.exports = router;

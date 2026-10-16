@@ -1,0 +1,20 @@
+{
+  "numero da nota": ["número da nota", "numero nota", "número da NFS-e", "nota número", "nota nº", "NFS-e número", "nota fiscal de serviços número"],
+  "codigo de verificacao": ["código de verificação", "código de autenticidade", "cód. de autenticidade", "cód. verificação"],
+  "data de emissao": ["data de emissão", "data e hora da emissão", "data e hora de emissão", "data de geração da NFS-e", "emissão da NFS-e"],
+  "competencia": ["competência", "competência da NFS-e"],
+  "numero do rps": ["número do RPS", "número RPS", "RPS número"],
+  "cnpj": ["CNPJ", "CPF", "CPF/CNPJ", "CNPJ/CPF", "CNPJ / CPF / NIF", "CPF / CNPJ / NIF"],
+  "nome": ["nome", "nome empresarial", "nome / nome empresarial", "razão social", "nome / razão social"],
+  "endereco": ["endereço", "endereço e CEP", "logradouro"],
+  "valor dos servicos": ["valor dos serviços", "valor do serviço", "valor total dos serviços", "total dos serviços", "vl. total dos serviços"],
+  "valor liquido": ["valor líquido", "valor líquido da nota", "valor líquido da NFS-e", "vl. líquido da nota fiscal", "total líquido"],
+  "valor total da nota": ["valor total da nota", "total da nota", "valor total da NFS-e"],
+  "base de calculo": ["base de cálculo", "base de cálculo do ISSQN", "b. cálculo", "BC ISSQN"],
+  "valor do iss": ["valor do ISS", "valor do ISSQN", "ISS", "ISSQN", "ISSQN apurado", "total do ISSQN"],
+  "aliquota": ["alíquota", "alíquota aplicada", "aliq."],
+  "iss retido": ["ISS retido", "ISSQN retido", "retenção do ISSQN", "ISS a reter"],
+  "descricao dos servicos": ["descrição dos serviços", "descrição do serviço", "discriminação dos serviços", "serviços prestados"],
+  "municipio da prestacao": ["município da prestação", "município de prestação", "local da prestação", "local da prestação do serviço"],
+  "municipio da incidencia": ["município da incidência", "município de incidência", "município de incidência do ISSQN"]
+}

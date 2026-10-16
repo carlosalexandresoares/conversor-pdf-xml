@@ -51,11 +51,21 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_documentos_prestador
     ON documentos(cnpj_prestador);
+
+  CREATE TABLE IF NOT EXISTS eventos_documento (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    documento_id INTEGER NOT NULL,
+    acao TEXT NOT NULL,
+    ator TEXT NOT NULL,
+    detalhes_json TEXT NOT NULL DEFAULT '{}',
+    criado_em TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_eventos_documento ON eventos_documento(documento_id, id);
 `);
 
 // Additive migration: preserves existing PDFs, records and manual revisions.
 const colunas = new Set(db.prepare("PRAGMA table_info(documentos)").all().map(c => c.name));
-for (const [nome, tipo] of Object.entries({ processamento: "TEXT NOT NULL DEFAULT 'novo'", erro_processamento: "TEXT", processado_em: "TEXT" })) {
+for (const [nome, tipo] of Object.entries({ processamento: "TEXT NOT NULL DEFAULT 'novo'", erro_processamento: "TEXT", processado_em: "TEXT", excluido_em: "TEXT" })) {
   if (!colunas.has(nome)) db.exec(`ALTER TABLE documentos ADD COLUMN ${nome} ${tipo}`);
 }
 db.pragma("busy_timeout = 5000");

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const db = require("./database");
+const {registrar}=require('./auditoria');
 const {enfileirar, pastaUploads} = require("./processamento");
 
 
@@ -63,10 +64,14 @@ router.post("/", (req, res) => {
 
     try {
       const existente = db.prepare(`
-        SELECT id FROM documentos WHERE hash_pdf = ?
+        SELECT id,excluido_em FROM documentos WHERE hash_pdf = ?
       `).get(hash);
 
       if (existente) {
+        if(existente.excluido_em){
+          db.prepare('UPDATE documentos SET excluido_em=NULL WHERE id=?').run(existente.id);
+          registrar(req,existente.id,'restaurado_por_reenvio');
+        }
         return res.status(200).json({
           id: existente.id, duplicado: true,
           mensagem: `Este arquivo já foi cadastrado como documento ${existente.id}.`,
@@ -96,6 +101,7 @@ router.post("/", (req, res) => {
       );
 
       arquivoGravado = false; // O arquivo já pertence ao registro salvo.
+      registrar(req,Number(resultado.lastInsertRowid),'importado',{nome_arquivo:arquivo.originalname});
       enfileirar(Number(resultado.lastInsertRowid));
       return res.status(201).json({
         mensagem: "PDF salvo e adicionado à fila de leitura.",

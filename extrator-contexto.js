@@ -1,4 +1,5 @@
 // Complementa rótulos explícitos com blocos do texto completo. Sem serviço externo.
+const {padraoRotulos}=require('./catalogo-rotulos');
 const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function extrairContexto(texto){
   texto=texto.normalize('NFC').replace(/\r/g,'').replace(/\u00a0/g,' ');
@@ -13,8 +14,8 @@ function extrairContexto(texto){
   }
   const moeda=v=>{const n=Number(v.replace(/\./g,'').replace(',','.'));return Number.isSafeInteger(Math.round(n*100))?Math.round(n*100):null;};
   const dinheiro='(?:R\\$\\s*)?(\\d+(?:\\.\\d{3})*,\\d{2})(?!\\d)';
-  for(const [campo,rotulo] of Object.entries({valor_servicos_centavos:'(?:valor\\s+)?total\\s+(?:dos?\\s+)?servi[çc]os',valor_total_nota_centavos:'total\\s+da\\s+nota',valor_liquido_centavos:'(?:valor|total)\\s+l[íi]quido'})){
-    capturar(campo,texto,new RegExp('\\b'+rotulo+'[ \\t]*(?:[:=]|\\(R\\$\\))?[ \\t]*(?:\\n[ \\t]*)?'+dinheiro,'gi'),moeda);
+  for(const [campo,rotulo] of Object.entries({valor_servicos_centavos:'valor dos servicos',valor_total_nota_centavos:'valor total da nota',valor_liquido_centavos:'valor liquido'})){
+    capturar(campo,norm(texto),new RegExp('\\b'+padraoRotulos(rotulo)+'[ \\t]*(?:[:=]|\\(R\\$\\))?[ \\t]*(?:\\n[ \\t]*)?'+dinheiro,'gi'),moeda);
   }
   capturar('item_lista_servico',texto,/(?:Atividade|Item da lista de servi[çc]os)\s*:\s*(\d{1,2}\.\d{2})(?=\s*[-–])/gi);
   const iss=/\bISS\s+(SEM RETEN[ÇC][ÃA]O|RETIDO)[ \t|:]*(\d{1,2}(?:,\d{1,4})?)\s*%[ \t]+(\d+(?:\.\d{3})*,\d{2})(?!\d)/gi;
@@ -55,7 +56,10 @@ function extrairContexto(texto){
     bloco=bloco.split(/\n(?:(?:Qtd|Qtde)\s|Discrimina[çc][ãa]o|Descri[çc][ãa]o dos servi[çc]os|Local do Servi[çc]o|Natureza Opera[çc][ãa]o|Atividade:|VALOR|RETEN[ÇC])/i)[0];
     const primeiras=bloco.split('\n').map(s=>s.trim()).filter(Boolean);
     const nome=primeiras[0];
-    if(nome&&/^[\p{L}]/u.test(nome)&&!/:|\b(?:cpf|cnpj|endere[çc]o|nome|raz[ãa]o|munic[íi]pio|e-mail|telefone|rua|avenida)\b/i.test(nome))guardar('nome_'+pessoa,nome,nome);
+    if(nome&&/^[\p{L}]/u.test(nome)&&!/:|\b(?:cpf|cnpj|endere[çc]o|nome|raz[ãa]o|munic[íi]pio|e-mail|telefone|rua|avenida)\b/i.test(nome)){
+      if(/\d{11,14}\s*$/.test(nome))avisos.push(`Nome do ${pessoa} contém um documento numérico colado; confira o original.`);
+      else guardar('nome_'+pessoa,nome,nome);
+    }
     capturar('cnpj_'+pessoa,bloco,/(?:CNPJ\s*\/\s*CPF|CPF\s*\/\s*CNPJ|CNPJ|CPF)\s*:\s*([\d./-]{11,18})(?![\d./-])/gi,v=>{const n=v.replace(/\D/g,'');return [11,14].includes(n.length)?n:null;});
     capturar(pessoa+'_cep',bloco,/\bCEP\s*:\s*(\d{5}-?\d{3})(?!\d)/gi,v=>v.replace('-',''));
     capturar(pessoa+'_email',bloco,/(?:E-?mail)\s*:\s*([^\s@]+@[^\s@]+\.[^\s@]+)/gi);

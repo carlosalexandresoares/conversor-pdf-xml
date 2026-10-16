@@ -26,9 +26,16 @@ Este documento mostra onde alterar cada parte do sistema. Os comentários no có
 - [processamento.js](./processamento.js) controla a fila, chama o worker e salva o resultado. Novas regras de interpretação precisam preservar revisões já salvas.
 - [revisao.js](./revisao.js) valida o que o usuário digitou e protege contra salvamento de uma versão desatualizada.
 - [exportacao.js](./exportacao.js) mapeia os dados revisados para o XML; a inclusão de um novo campo requer conferir também [campos.json](./public/campos.json) e os testes de exportação.
+- [perfil-exportacao.js](./perfil-exportacao.js) concentra as pendências impeditivas de aprovação. Ao alterar o perfil do XML, atualize essa lista e os testes. A aceitação pelo G5 só pode ser afirmada depois de homologação com arquivos aceitos pelo sistema.
+- [auditoria.js](./auditoria.js) grava eventos de revisão, aprovação, exportação e exclusão na tabela `eventos_documento`. Em uso sem senha, o ator aparece como usuário local.
+- [sugestoes-worker.js](./sugestoes-worker.js) isola a releitura feita pelo botão **Preencher pelo texto** e é encerrado após 30 segundos.
+- A lista da biblioteca usa busca, filtros e paginação no servidor. O navegador consulta a cada 2,5 segundos apenas enquanto há documentos em processamento e faz uma atualização geral a cada 30 segundos.
+- [gerar-pacote.cjs](./scripts/gerar-pacote.cjs), [backup.cjs](./scripts/backup.cjs) e [verificar-backup.cjs](./scripts/verificar-backup.cjs) separam distribuição de código, cópia de dados e prova de restauração. [avaliar-extracao.cjs](./scripts/avaliar-extracao.cjs) mede acertos e lacunas sobre uma amostra com gabarito.
 
 ## Extração de dados
 
+- [rotulos.json](./rotulos.json) lista nomes equivalentes de campos; [catalogo-rotulos.js](./catalogo-rotulos.js) normaliza abreviações apenas nos rótulos e fornece padrões para os extratores de texto, contexto e posição. Novos sinônimos comuns entram no catálogo; regras de valor e de contexto permanecem em JavaScript.
+- [validacao-extracao.js](./validacao-extracao.js) confere dígitos de CPF/CNPJ e compara ISS com base × alíquota. Inconsistências geram avisos na revisão; o módulo não altera os valores extraídos.
 - [layout-documento.js](./layout-documento.js) normaliza fragmentos de PDF e palavras de OCR no mesmo formato e calcula a área de origem para a prévia.
 - [extrator-posicional.js](./extrator-posicional.js) associa rótulos, valores e blocos por posição na página. As regras genéricas ficam na lista `regras`; adicione variações de rótulo ali apenas quando houver validação confiável do valor.
 - Cabeçalhos em colunas usam o centro de cada rótulo para delimitar a célula de baixo. Quando o título "Prestador" não aparece, a associação com a empresa anterior ao tomador exige um único nome empresarial e um CNPJ rotulado próximo; endereço sem rótulo exige rua, número e linha de cidade/UF/CEP no mesmo bloco.
@@ -41,6 +48,13 @@ As sugestões automáticas exigem conferência antes da exportação. Quando o P
 
 ## Arquivos antigos e testes
 
-[campos.js](./campos.js), [complementos.js](./complementos.js), [leitura.js](./leitura.js) e [pendencias.js](./pendencias.js) são módulos antigos mantidos no repositório; [server.js](./server.js) não os monta. Não use esses arquivos como ponto de entrada para novas funcionalidades.
+`campos.js`, `complementos.js`, `leitura.js` e `pendencias.js` são módulos antigos que não acompanham o pacote corrigido. Eles podem permanecer em instalações anteriores, mas o servidor não os monta.
 
 Os testes ficam em [tests/](./tests). Execute `npm test` após mudanças. Para uma alteração de layout, acrescente um caso ao teste do extrator correspondente e verifique a leitura completa até a revisão quando o comportamento envolver o worker. Os testes usam arquivos temporários e não alteram o banco real.
+
+## Regras da correção 2.0.1
+
+- `perfil-exportacao.js` centraliza `leituraConcluida`, usada nas pendências e na exportação individual e em lote. Uma falha só é considerada resolvida para exportar após conclusão manual explícita; o estado técnico de erro é preservado.
+- `revisao.js` valida a versão recebida em aprovar, reabrir e concluir manualmente. Alterações após conclusão manual removem sua marcação.
+- `validacao-extracao.js` remove mensagens conhecidas de validação legada e as recompõe com os valores atuais, preservando avisos de outras origens.
+- Execute `npm test` e, depois da última edição, `npm run pacote`. O ZIP em `dist/conversor-codigo.zip` é a entrega de código; não compacte a pasta operacional inteira.

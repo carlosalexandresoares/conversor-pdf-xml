@@ -88,6 +88,7 @@
               <option value="revisados">Revisão salva</option>
               <option value="fila">Em processamento</option>
               <option value="erro">Falha na leitura</option>
+              <option value="lixeira">Lixeira</option>
             </select></label></div>
         <div class="selection-line"><span id="selecao-info">Selecione documentos para começar.</span><span>1 PDF por
             nota fiscal</span></div>
@@ -142,14 +143,16 @@
         <form id="form-revisao">
           <div id="campos-revisao"></div>
           <div class="save-bar">
-            <p id="mensagem-revisao" role="status"></p><button class="btn primary" id="salvar-revisao"
+            <p id="mensagem-revisao" role="status"></p><button class="btn secondary" id="aprovar-revisao" type="button">Aprovar para exportar</button><button class="btn primary" id="salvar-revisao"
               type="submit">Salvar revisão</button>
           </div>
         </form>
         <pre id="dados-estruturados" hidden></pre>
         <pre id="texto-extraido" hidden></pre>
         <button type="button" class="text-btn" id="tentar-leitura" hidden>Tentar leitura novamente</button>
+        <button type="button" class="btn secondary" id="concluir-manual" hidden>Concluir por revisão manual</button>
         <button type="button" class="btn secondary" id="preencher-texto">Preencher pelo texto</button>
+        <details><summary>Histórico do documento</summary><pre id="historico-documento">Carregando…</pre></details>
       </div>
     </div>
   </dialog>

@@ -1,7 +1,7 @@
 # Especificação do projeto — Conversor PDF para XML
 
-**Versão documentada:** 2.0.0
-**Data:** 15/10/2026
+**Versão documentada:** 2.0.1
+**Data:** 16/10/2026
 **Situação:** funcionalidades descritas conforme o código atual; este documento não propõe mudanças de comportamento.
 
 ## 1. Objetivo
@@ -118,3 +118,9 @@ O comando `npm test` executa os testes automáticos em [tests/](./tests), usando
 ## 12. Fora do escopo atual
 
 Emissão ou autorização de NFS-e; assinatura digital; validação formal do XML contra XSD ABRASF; integração comprovada com G5; autenticação e permissões por usuário; hospedagem pública; identificação infalível de qualquer PDF; separação automática de várias notas em um PDF. Esses itens exigem requisitos e validações próprios antes de serem tratados como funcionalidades do produto.
+
+## 13. Correções operacionais da versão 2.0.1
+
+Aprovação, reabertura e conclusão manual recebem `versao` no corpo JSON e rejeitam versões desatualizadas com HTTP 409. A conclusão manual é exclusiva de registros com erro, revisão salva e campos essenciais válidos; preserva o estado e a mensagem de erro, armazena `concluido_manual_em` e registra um evento. Ela permite baixar rascunho e solicitar aprovação normal, mas não aprova automaticamente. Edições posteriores invalidam a conclusão manual.
+
+Rota adicional: `POST /api/documentos/:id/concluir-manual`. A exportação individual e em lote usa a mesma regra de conclusão. A interface recarrega os dados e avisos após salvar. A verificação de backup cobre todos os documentos com PDF referenciado, inclusive lixeira, e rejeita manifestos incompletos ou duplicados.

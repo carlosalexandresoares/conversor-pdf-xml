@@ -54,7 +54,9 @@ async function main(){
   const app=require('./server');
   const {retomar}=require('./processamento');
   const url=`http://localhost:${porta}`;
-  const server=app.listen(porta,'0.0.0.0',()=>{
+  const host=process.env.CONVERSOR_HOST||'127.0.0.1';
+  if(!['127.0.0.1','localhost','::1'].includes(host)&&(!process.env.CONVERSOR_PASSWORD||!process.env.CONVERSOR_DELETE_PASSWORD))throw new Error('Defina CONVERSOR_PASSWORD e CONVERSOR_DELETE_PASSWORD antes de liberar o acesso pela rede.');
+  const server=app.listen(porta,host,()=>{
     console.log(`\nSistema disponível em ${url}\nMantenha esta janela aberta enquanto usar o sistema. Para encerrar, pressione Ctrl+C.\n`);
     retomar();
     if(process.platform==='win32'){

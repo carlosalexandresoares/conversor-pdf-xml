@@ -8,6 +8,8 @@ const $=s=>document.querySelector(s);
 let documentos=[],selecionados=new Set(),pagina=1,arquivos=[],enviando=false,baixando=false,revisao=null,alterado=false,salvando=false,carregando=false;
 let definicoes=[];
 let excluindo=false;
+let recarregarDepois=false;
+let listagem={total:0,paginas:1,resumo:{total:0,fila:0,pendentes:0,revisados:0}};
 const tamanhoPagina=25;
 const formatoMoeda=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const dataCurta=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR');};
@@ -17,7 +19,7 @@ async function requisicao(url,opcoes={}){
   const controlador=new AbortController();const timer=setTimeout(()=>controlador.abort(),60000);
   try {
     const resposta=await fetch(url,{...opcoes,signal:controlador.signal});
-    if(!resposta.ok){let erro;try{erro=await resposta.json()}catch{}throw new Error(erro?.erro||`O servidor retornou HTTP ${resposta.status}. Atualize a página.`);}
+    if(!resposta.ok){let erro;try{erro=await resposta.json()}catch{}throw new Error([erro?.erro||`O servidor retornou HTTP ${resposta.status}. Atualize a página.`,...(erro?.pendencias||[])].join('\n'));}
     return resposta;
   }catch(erro){
     if(erro.name==='AbortError')throw new Error('O servidor demorou para responder. Verifique a lista antes de reenviar o arquivo.');
@@ -27,48 +29,44 @@ async function requisicao(url,opcoes={}){
 }
 async function json(url,opcoes){const r=await requisicao(url,opcoes);try{return await r.json()}catch{throw new Error('Resposta inesperada do servidor. Atualize com Ctrl+F5.');}}
 function status(doc){
+  if(doc.excluido_em)return ['Na lixeira',''];
   if(doc.processamento==='fila')return ['Na fila','blue'];
   if(doc.processamento==='processando')return ['Lendo PDF','blue'];
+  if(doc.status==='conferido'&&doc.aprovado_em)return ['Aprovado','green'];
+  if(doc.concluido_manual_em)return ['Conferência manual concluída','green'];
   if(doc.processamento==='erro')return ['Falha na leitura','red'];
   if(doc.revisado_em)return ['Revisão salva','green'];
   return ['Para revisar',''];
 }
 // Biblioteca: filtros, seleção, paginação e atualização periódica dos documentos.
 function filtrados(){
-  const termo=$('#busca').value.trim().toLocaleLowerCase('pt-BR');const filtro=$('#filtro').value;
-  return documentos.filter(d=>{
-    if(termo&&![d.nome_arquivo,d.numero_nota,d.nome_prestador,d.nome_tomador].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(termo)))return false;
-    if(filtro==='revisados')return !!d.revisado_em;
-    if(filtro==='pendentes')return !d.revisado_em&&!['fila','processando'].includes(d.processamento);
-    if(filtro==='fila')return ['fila','processando'].includes(d.processamento);
-    if(filtro==='erro')return d.processamento==='erro';
-    return true;
-  });
+  return documentos;
 }
 function atualizarAcoes(){
   const n=selecionados.size;
-  $('#revisar-selecionado').disabled=n!==1||baixando||excluindo;
-  $('#baixar-selecionado').disabled=!n||baixando||excluindo;
+  const lixeira=$('#filtro').value==='lixeira';
+  $('#revisar-selecionado').disabled=n!==1||baixando||excluindo||lixeira;
+  $('#baixar-selecionado').disabled=!n||baixando||excluindo||lixeira;
   const emLeitura=documentos.some(d=>selecionados.has(d.id)&&['fila','processando'].includes(d.processamento));
   $('#excluir-selecionado').disabled=!n||baixando||excluindo||emLeitura;
-  $('#excluir-selecionado').textContent=excluindo?'Excluindo…':n>1?`Excluir (${n})`:'Excluir';
+  $('#excluir-selecionado').textContent=excluindo?(lixeira?'Restaurando…':'Movendo…'):lixeira?(n>1?`Restaurar (${n})`:'Restaurar'):(n>1?`Excluir (${n})`:'Excluir');
   $('#excluir-selecionado').title=emLeitura?'Aguarde a leitura dos documentos selecionados terminar.':'';
   $('#baixar-selecionado').textContent=baixando?'Preparando…':n>1?`Baixar XMLs (${n})`:'Baixar XML';
   $('#selecao-info').textContent=n?`${n} documento${n>1?'s':''} selecionado${n>1?'s':''}${n>1?' • Download em ZIP. Selecione apenas um para revisar.':''}`:'Selecione documentos para começar.';
-  const ids=filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina).map(d=>d.id);
+  const ids=filtrados().map(d=>d.id);
   const selecionadosNaPagina=ids.filter(id=>selecionados.has(id)).length;
   $('#selecionar-todos').checked=ids.length>0&&selecionadosNaPagina===ids.length;
   $('#selecionar-todos').indeterminate=selecionadosNaPagina>0&&selecionadosNaPagina<ids.length;
   $('#selecionar-todos').disabled=!ids.length;
 }
 function renderizar(){
-  $('#total').textContent=$('#nav-total').textContent=documentos.length;
-  $('#em-fila').textContent=documentos.filter(d=>['fila','processando'].includes(d.processamento)).length;
-  $('#a-revisar').textContent=documentos.filter(d=>!d.revisado_em&&!['fila','processando'].includes(d.processamento)).length;
-  $('#revisados').textContent=documentos.filter(d=>d.revisado_em).length;
-  const lista=filtrados(),paginas=Math.max(1,Math.ceil(lista.length/tamanhoPagina));pagina=Math.min(pagina,paginas);
+  $('#total').textContent=$('#nav-total').textContent=listagem.resumo.total||0;
+  $('#em-fila').textContent=listagem.resumo.fila||0;
+  $('#a-revisar').textContent=listagem.resumo.pendentes||0;
+  $('#revisados').textContent=listagem.resumo.revisados||0;
+  const lista=filtrados(),paginas=listagem.paginas;pagina=Math.min(pagina,paginas);
   const tbody=$('#documentos');tbody.replaceChildren();
-  for(const doc of lista.slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina)){
+  for(const doc of lista){
     const linha=el('tr',selecionados.has(doc.id)?'selected':'');
     const check=el('input');check.type='checkbox';check.checked=selecionados.has(doc.id);check.setAttribute('aria-label',`Selecionar ${doc.nome_arquivo}`);
     check.addEventListener('change',()=>{if(check.checked)selecionados.add(doc.id);else selecionados.delete(doc.id);linha.classList.toggle('selected',check.checked);atualizarAcoes();});
@@ -83,27 +81,34 @@ function renderizar(){
     const situacao=el('td');const [rotulo,cor]=status(doc);const badge=el('span','badge '+cor,rotulo);badge.title=doc.erro_processamento||doc.avisos.join('\n');situacao.append(badge);
     linha.append(celulaCheck,nome,empresa,valor,situacao);tbody.append(linha);
   }
-  $('#vazio').hidden=lista.length!==0;
-  $('#contagem').textContent=lista.length?`${(pagina-1)*tamanhoPagina+1}–${Math.min(pagina*tamanhoPagina,lista.length)} de ${lista.length} documentos`:'Nenhum documento';
+  $('#vazio').hidden=listagem.total!==0;
+  $('#contagem').textContent=listagem.total?`${(pagina-1)*tamanhoPagina+1}–${Math.min(pagina*tamanhoPagina,listagem.total)} de ${listagem.total} documentos`:'Nenhum documento';
   $('#pagina').textContent=`${pagina} / ${paginas}`;$('#anterior').disabled=pagina===1;$('#proxima').disabled=pagina===paginas;
   atualizarAcoes();
 }
 async function carregar(){
-  if(carregando)return;carregando=true;
+  if(carregando){recarregarDepois=true;return;}carregando=true;
   try{
-    const novos=await json('/api/documentos');const mudou=JSON.stringify(novos)!==JSON.stringify(documentos);
-    documentos=novos;selecionados=new Set([...selecionados].filter(id=>documentos.some(d=>d.id===id)));
+    const busca=encodeURIComponent($('#busca').value.trim());
+    const resultado=await json(`/api/documentos?pagina=${pagina}&filtro=${encodeURIComponent($('#filtro').value)}&busca=${busca}`);
+    const novos=resultado.documentos;const mudou=JSON.stringify(novos)!==JSON.stringify(documentos)||JSON.stringify(resultado.resumo)!==JSON.stringify(listagem.resumo)||resultado.total!==listagem.total||resultado.pagina!==pagina;
+    documentos=novos;listagem=resultado;pagina=resultado.pagina;
     if(mudou||!$('#contagem').textContent)renderizar();$('#conexao').textContent='● Servidor conectado';$('#conexao').classList.remove('offline');
     if(revisao && ['fila','processando'].includes(revisao.processamento) && !alterado && !salvando){
       const atual=documentos.find(d=>d.id===revisao.id);
-      if(atual && !['fila','processando'].includes(atual.processamento))await abrirRevisao(atual.id,true);
+      if(!atual || !['fila','processando'].includes(atual.processamento))await abrirRevisao(revisao.id,true);
     }
   }catch(erro){$('#conexao').textContent='● Sem conexão';$('#conexao').classList.add('offline');notificar(erro.message,true);}
-  finally{carregando=false;}
+  finally{carregando=false;if(recarregarDepois){recarregarDepois=false;carregar();}}
 }
-for(const id of ['#busca','#filtro'])$(id).addEventListener('input',()=>{pagina=1;renderizar();});
-$('#anterior').addEventListener('click',()=>{pagina--;renderizar();});$('#proxima').addEventListener('click',()=>{pagina++;renderizar();});
-$('#selecionar-todos').addEventListener('change',()=>{const marcar=$('#selecionar-todos').checked;for(const d of filtrados().slice((pagina-1)*tamanhoPagina,pagina*tamanhoPagina))marcar?selecionados.add(d.id):selecionados.delete(d.id);renderizar();});
+let esperaBusca;
+let filtroAnterior=$('#filtro').value;
+for(const id of ['#busca','#filtro'])$(id).addEventListener('input',()=>{
+  if(id==='#filtro'&&($('#filtro').value==='lixeira')!==(filtroAnterior==='lixeira'))selecionados.clear();
+  filtroAnterior=$('#filtro').value;pagina=1;clearTimeout(esperaBusca);esperaBusca=setTimeout(carregar,250);
+});
+$('#anterior').addEventListener('click',()=>{pagina--;carregar();});$('#proxima').addEventListener('click',()=>{pagina++;carregar();});
+$('#selecionar-todos').addEventListener('change',()=>{const marcar=$('#selecionar-todos').checked;for(const d of filtrados())marcar?selecionados.add(d.id):selecionados.delete(d.id);renderizar();});
 // Importação: escolhe arquivos, recebe arrastar/soltar e envia cada PDF do lote.
 function escolherArquivos(itens){
   if(enviando)return;
@@ -140,16 +145,27 @@ $('#form-upload').addEventListener('submit',async e=>{
 $('#excluir-selecionado').addEventListener('click',async()=>{
   if(excluindo||baixando||!selecionados.size)return;
   const ids=[...selecionados];
+  const lixeira=$('#filtro').value==='lixeira';
   const nomes=documentos.filter(d=>selecionados.has(d.id)).map(d=>d.nome_arquivo);
-  if(!confirm(`Excluir permanentemente ${ids.length} documento(s)?\n\n${nomes.slice(0,5).join('\n')}${nomes.length>5?'\n…':''}\n\nOs PDFs armazenados e os dados de revisão serão removidos. Esta ação não pode ser desfeita.`))return;
-  excluindo=true;atualizarAcoes();let removidos=0;const falhas=[];
+  if(!lixeira&&!confirm(`Mover ${ids.length} documento(s) para a lixeira?\n\n${nomes.slice(0,5).join('\n')}${nomes.length>5?'\n…':''}\n\nVocê poderá restaurá-los pelo filtro Lixeira.`))return;
+  excluindo=true;atualizarAcoes();let removidos=0;const falhas=[];let senhaExclusao;
   try {
     for(const id of ids){
-      try {await json(`/api/documentos/${id}`,{method:'DELETE'});selecionados.delete(id);removidos++;}
+      try {
+        const executar=()=>json(`/api/documentos/${id}${lixeira?'/restaurar':''}`,{method:lixeira?'POST':'DELETE',headers:senhaExclusao?{'X-Delete-Password':senhaExclusao}:{}});
+        try{await executar();}
+        catch(erro){
+          if(lixeira||!erro.message.includes('Senha de exclusão necessária'))throw erro;
+          senhaExclusao=prompt('Digite a senha de exclusão configurada no servidor:');
+          if(!senhaExclusao)throw new Error('Exclusão cancelada.');
+          await executar();
+        }
+        selecionados.delete(id);removidos++;
+      }
       catch(erro){falhas.push(`#${id}: ${erro.message}`);}
     }
     await carregar();
-    notificar(`${removidos} documento(s) excluído(s).${falhas.length?'\n'+falhas.join('\n'):''}`,falhas.length>0);
+    notificar(`${removidos} documento(s) ${lixeira?'restaurado(s)':'movido(s) para a lixeira'}.${falhas.length?'\n'+falhas.join('\n'):''}`,falhas.length>0);
   } finally {excluindo=false;atualizarAcoes();}
 });
 async function salvarDownload(resposta,nome){
@@ -160,9 +176,19 @@ $('#baixar-selecionado').addEventListener('click',async()=>{
   if(ids.length>100){notificar('Baixe até 100 XMLs por lote.',true);return;}
   baixando=true;atualizarAcoes();
   try{
-    if(ids.length===1)await salvarDownload(await requisicao(`/api/documentos/${ids[0]}/xml`),`documento-${ids[0]}-abrasf.xml`);
-    else await salvarDownload(await requisicao('/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})}),'xml-selecionados.zip');
-    notificar(ids.length===1?'XML baixado com os dados disponíveis. Confira o documento antes da importação fiscal.':'ZIP baixado. Consulte também o relatório de exportação incluído no arquivo.');
+    const previa=await json('/api/documentos/preparar-exportacao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+    const emLeitura=previa.documentos.filter(d=>d.pendencias.some(p=>p.includes('Leitura do PDF')));
+    if(emLeitura.length)throw new Error('Aguarde o processamento terminar: '+emLeitura.map(d=>d.nome_arquivo).join(', '));
+    const incompletos=previa.documentos.filter(d=>!d.aprovado||d.pendencias.length);
+    const aviso=previa.documentos.flatMap(d=>d.avisos.map(v=>`${d.nome_arquivo}: ${v}`));
+    const rascunho=incompletos.length>0;
+    if(rascunho){
+      const lista=incompletos.flatMap(d=>[d.nome_arquivo,...d.pendencias.map(v=>'  • '+v)]).join('\n');
+      if(!confirm(`Documentos ainda não aprovados ou com pendências:\n\n${lista.slice(0,3000)}\n\nBaixar somente como RASCUNHO para conferência?`))return;
+    }else if(aviso.length&&!confirm(`Avisos antes da exportação:\n\n${aviso.slice(0,3000)}\n\nContinuar?`))return;
+    if(ids.length===1)await salvarDownload(await requisicao(`/api/documentos/${ids[0]}/xml${rascunho?'?rascunho=1':''}`),`documento-${ids[0]}-abrasf${rascunho?'-RASCUNHO':''}.xml`);
+    else await salvarDownload(await requisicao('/api/documentos/xml-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,rascunho})}),`xml-selecionados${rascunho?'-RASCUNHO':''}.zip`);
+    notificar(rascunho?'Rascunho baixado. Confira e aprove os documentos antes da importação.':'XML exportado. Confira os avisos e valide o perfil no sistema de destino.');
   }catch(erro){notificar(erro.message,true);}finally{baixando=false;atualizarAcoes();}
 });
 // Revisão: gera o formulário a partir das definições, mostra o PDF e salva edições.
@@ -241,11 +267,19 @@ async function abrirRevisao(id,atualizacao=false){
   if(processando)avisos.unshift('A leitura está em andamento. Os campos serão preenchidos automaticamente quando terminar.');
   $('#aviso-revisao').textContent=avisos.join('\n');$('#aviso-revisao').hidden=!avisos.length;
   $('#salvar-revisao').disabled=['fila','processando'].includes(resultado.processamento);
+  $('#salvar-revisao').disabled ||= resultado.status==='conferido';
+  $('#aprovar-revisao').disabled=processando;
+  $('#aprovar-revisao').textContent=resultado.status==='conferido'?'Reabrir revisão':'Aprovar para exportar';
+  $('#concluir-manual').hidden=resultado.processamento!=='erro'||resultado.status==='conferido'||!!resultado.dados.concluido_manual_em;
   $('#tentar-leitura').hidden=processando||!!resultado.dados.revisado_em;
   $('#preencher-texto').disabled=processando||!resultado.texto_extraido;
   $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);atualizarDadosOrganizados();trocarAba(false);
-  for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando;
+  for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando||resultado.status==='conferido';
   if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
+  json(`/api/documentos/${id}/historico`).then(eventos=>{
+    if(revisao?.id!==id)return;
+    $('#historico-documento').textContent=eventos.length?eventos.map(e=>`${dataCurta(e.criado_em)} • ${e.ator} • ${e.acao}${Object.keys(e.detalhes).length?'\n'+JSON.stringify(e.detalhes,null,2):''}`).join('\n\n'):'Nenhum evento registrado.';
+  }).catch(()=>{$('#historico-documento').textContent='Histórico indisponível.';});
 }
 $('#revisar-selecionado').addEventListener('click',async()=>{
   if(selecionados.size!==1)return;$('#revisar-selecionado').disabled=true;
@@ -278,8 +312,33 @@ $('#form-revisao').addEventListener('submit',async e=>{
   try{
     const campos=Object.fromEntries(new FormData(e.currentTarget));
     const r=await json(`/api/documentos/${revisao.id}/revisao`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({campos,versao:revisao.versao})});
-    revisao.versao=r.versao;alterado=false;$('#mensagem-revisao').textContent=r.mensagem;$('#tentar-leitura').hidden=true;await carregar();
+    alterado=false;
+    await abrirRevisao(revisao.id);
+    $('#mensagem-revisao').textContent=r.mensagem;
+    await carregar();
   }catch(erro){$('#mensagem-revisao').textContent=erro.message;}finally{salvando=false;$('#salvar-revisao').disabled=false;}
+});
+$('#aprovar-revisao').addEventListener('click',async()=>{
+  if(!revisao||salvando)return;
+  if(alterado){$('#mensagem-revisao').textContent='Salve as alterações antes de aprovar.';return;}
+  const reabrir=revisao.status==='conferido';
+  try{
+    const resposta=await json(`/api/documentos/${revisao.id}/${reabrir?'reabrir':'aprovar'}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({versao:revisao.versao})});
+    await abrirRevisao(revisao.id);await carregar();
+    $('#mensagem-revisao').textContent=resposta.mensagem;
+  }catch(erro){$('#mensagem-revisao').textContent=erro.message;}
+});
+$('#concluir-manual').addEventListener('click',async()=>{
+  if(!revisao||salvando)return;
+  if(alterado){$('#mensagem-revisao').textContent='Salve as alterações antes de concluir manualmente.';return;}
+  if(!confirm('Você conferiu os campos com o PDF original? A falha de leitura será preservada no histórico. Após concluir, ainda será necessário aprovar para exportar.'))return;
+  salvando=true;
+  try{
+    const resposta=await json(`/api/documentos/${revisao.id}/concluir-manual`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({versao:revisao.versao})});
+    await abrirRevisao(revisao.id);await carregar();
+    $('#mensagem-revisao').textContent=resposta.mensagem;
+  }catch(erro){$('#mensagem-revisao').textContent=erro.message;}
+  finally{salvando=false;}
 });
 $('#tentar-leitura').addEventListener('click',async()=>{
   if(!revisao||alterado){$('#mensagem-revisao').textContent='Salve ou descarte suas alterações antes de tentar novamente.';return;}
@@ -317,4 +376,5 @@ $('#preencher-texto').addEventListener('click',async()=>{
   finally{if(revisao===atual)$('#preencher-texto').disabled=false;}
 });
 // Mantém status e resultados da fila atualizados enquanto a página está visível.
-carregar();setInterval(()=>{if(!document.hidden)carregar();},2500);
+carregar();setInterval(()=>{if(!document.hidden&&(listagem.resumo.fila||revisao?.processamento==='fila'||revisao?.processamento==='processando'))carregar();},2500);
+setInterval(()=>{if(!document.hidden)carregar();},30000);

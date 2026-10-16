@@ -2,6 +2,8 @@
 const express = require("express");
 const db = require("./database");
 const { preencherCodigosMunicipios } = require("./municipios");
+const { avaliarExportacao, leituraConcluida } = require('./perfil-exportacao');
+const {registrar}=require('./auditoria');
 
 const router = express.Router();
 const archiver = require("archiver");
@@ -151,22 +153,27 @@ router.get(["/:id/xml-teste", "/:id/xml"], (req, res) => {
 
   try {
     const documento = db.prepare(`
-      SELECT dados_json FROM documentos WHERE id = ?
+      SELECT * FROM documentos WHERE id = ? AND excluido_em IS NULL
     `).get(id);
 
     if (!documento) {
       return res.status(404).json({ erro: "Documento não encontrado." });
     }
 
-    const dados = JSON.parse(documento.dados_json || "{}") || {};
+    const avaliacao = avaliarExportacao(documento);
+    const rascunho = req.query.rascunho === '1' || req.path.endsWith('/xml-teste');
+    if (!leituraConcluida(documento, avaliacao.dados)) return res.status(409).json({ erro: 'Aguarde a leitura ou conclua a revisão manual do documento com falha.', pendencias: avaliacao.pendencias });
+    if (!rascunho && (!avaliacao.aprovado || avaliacao.pendencias.length)) return res.status(409).json({ erro: 'Documento ainda não aprovado para exportação. Consulte as pendências.', pendencias: avaliacao.pendencias });
+    const dados = avaliacao.dados;
     preencherCodigosMunicipios(dados);
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="documento-${id}-abrasf.xml"`
+      `attachment; filename="documento-${id}-abrasf${rascunho ? '-RASCUNHO' : ''}.xml"`
     );
 
+    registrar(req,id,rascunho?'xml_rascunho':'xml_exportado');
     res.send(gerarXml(dados));
   } catch (erro) {
     console.error(erro);
@@ -183,23 +190,39 @@ function avisosExportacao(doc,dados) {
   if(doc.processamento==='erro') avisos.push(doc.erro_processamento || 'Extração interrompida.');
   if(['fila','processando'].includes(doc.processamento)) avisos.push('Leitura em andamento no momento da exportação.');
   if(dados.valor_ibs_centavos!=null || dados.valor_cbs_centavos!=null) avisos.push('IBS/CBS permanecem no banco; não são exportados no perfil ABRASF atual.');
-  return [...new Set(avisos)];
+  return [...new Set([...avisos,...avaliarExportacao(doc).pendencias])];
 }
+// A conferência é feita antes de gerar qualquer arquivo.
+router.post('/preparar-exportacao', (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => !Number.isSafeInteger(id) || id < 1)) return res.status(400).json({ erro: 'Selecione de 1 a 100 documentos válidos.' });
+  const documentos = [...new Set(ids)].map(id => db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id));
+  if (documentos.some(doc => !doc)) return res.status(404).json({ erro: 'Um dos documentos não existe mais. Atualize a lista.' });
+  res.json({ documentos: documentos.map(doc => {
+    const avaliacao = avaliarExportacao(doc);
+    return { id: doc.id, nome_arquivo: doc.nome_arquivo, aprovado: avaliacao.aprovado, pendencias: avaliacao.pendencias, avisos: avisosExportacao(doc, avaliacao.dados) };
+  }) });
+});
 router.post('/xml-lote', async (req,res,next)=>{
   const ids=req.body?.ids;
   if(!Array.isArray(ids)||ids.length<1||ids.length>100||ids.some(id=>!Number.isSafeInteger(id)||id<1)) return res.status(400).json({erro:'Selecione de 1 a 100 documentos válidos.'});
   try {
-    const registros=[...new Set(ids)].map(id=>db.prepare('SELECT * FROM documentos WHERE id=?').get(id));
+    const registros=[...new Set(ids)].map(id=>db.prepare('SELECT * FROM documentos WHERE id=? AND excluido_em IS NULL').get(id));
+    const avaliacoes=registros.filter(Boolean).map(avaliarExportacao);
+    if(registros.some(d=>d&&!leituraConcluida(d)))return res.status(409).json({erro:'Aguarde a leitura ou conclua a revisão manual dos documentos com falha.',pendencias:avaliacoes.flatMap(a=>a.pendencias)});
+    const rascunho=req.body?.rascunho===true;
+    if(!rascunho&&avaliacoes.some(a=>!a.aprovado||a.pendencias.length))return res.status(409).json({erro:'Há documentos sem aprovação ou com pendências.',pendencias:avaliacoes.flatMap(a=>a.pendencias)});
     if(registros.some(d=>!d))return res.status(404).json({erro:'Um dos documentos não existe mais. Atualize a lista.'});
     const arquivos=registros.map(doc=>{
       const dados=JSON.parse(doc.dados_json||'{}');preencherCodigosMunicipios(dados);
-      return {nome:`documento-${doc.id}-abrasf.xml`,xml:gerarXml(dados),avisos:avisosExportacao(doc,dados),original:doc.nome_arquivo};
+      return {nome:`documento-${doc.id}-abrasf${rascunho?'-RASCUNHO':''}.xml`,xml:gerarXml(dados),avisos:avisosExportacao(doc,dados),original:doc.nome_arquivo};
     });
-    res.type('application/zip');res.setHeader('Content-Disposition','attachment; filename="xml-selecionados.zip"');
+    for(const doc of registros)registrar(req,doc.id,rascunho?'xml_rascunho':'xml_exportado',{lote:true});
+    res.type('application/zip');res.setHeader('Content-Disposition',`attachment; filename="xml-selecionados${rascunho?'-RASCUNHO':''}.zip"`);
     const zip=archiver('zip',{zlib:{level:6}});
     zip.on('error',next);res.on('close',()=>{if(!res.writableEnded)zip.abort()});zip.pipe(res);
     for(const arquivo of arquivos)zip.append(arquivo.xml,{name:arquivo.nome});
-    zip.append('RELATÓRIO DE EXPORTAÇÃO\n\nPerfil baseado no XML ABRASF de referência. Não equivale a uma validação XSD ou à aceitação no G5. Campos ausentes são omitidos.\n\n'+arquivos.map(a=>`${a.original} → ${a.nome}\n${a.avisos.map(v=>'• '+v).join('\n')||'Sem avisos adicionais.'}`).join('\n\n'),{name:'relatorio-exportacao.txt'});
+    zip.append(`${rascunho?'RASCUNHO - NÃO IMPORTAR SEM CONFERÊNCIA\n\n':''}RELATÓRIO DE EXPORTAÇÃO\n\nPerfil baseado no XML ABRASF de referência. Não equivale a uma validação XSD ou à aceitação no G5. Campos ausentes são omitidos.\n\n`+arquivos.map(a=>`${a.original} → ${a.nome}\n${a.avisos.map(v=>'• '+v).join('\n')||'Sem avisos adicionais.'}`).join('\n\n'),{name:'relatorio-exportacao.txt'});
     await zip.finalize();
   } catch(erro){next(erro);}
 });
