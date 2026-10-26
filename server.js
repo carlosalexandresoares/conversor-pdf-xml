@@ -32,6 +32,7 @@ app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store'); next();
 });
 app.get('/api/status', (req, res) => { db.prepare('SELECT 1').get(); res.json({ funcionando: true, sistema: 'Conversor PDF para XML', versao: require('./package.json').version, banco: 'conectado' }); });
+app.use('/api/tomadores', require('./tomadores'));
 app.get('/api/documentos', (req, res) => {
   if (req.query.pagina !== undefined) {
     const pagina = Number(req.query.pagina);

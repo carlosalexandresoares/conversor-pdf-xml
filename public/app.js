@@ -7,6 +7,8 @@
 const $=s=>document.querySelector(s);
 let documentos=[],selecionados=new Set(),pagina=1,arquivos=[],enviando=false,baixando=false,revisao=null,alterado=false,salvando=false,carregando=false;
 let definicoes=[];
+let tomadoresCadastrados=[];
+let tomadorDoArquivo={};
 let excluindo=false;
 let recarregarDepois=false;
 let listagem={total:0,paginas:1,resumo:{total:0,fila:0,pendentes:0,revisados:0}};
@@ -233,19 +235,60 @@ function mostrarOrigemCampo(label,origem){
     ver.title=origem.trecho||'Mostrar trecho no documento original';
     ver.addEventListener('click',e=>{e.preventDefault();mostrarOrigemNoPdf(origem);});label.append(ver);}
 }
+const camposTomador=['cnpj_tomador','nome_tomador','tomador_codigo_municipio','tomador_endereco','tomador_numero','tomador_complemento','tomador_bairro','tomador_cep','tomador_municipio','tomador_uf','tomador_inscricao_municipal','tomador_email','tomador_telefone'];
+function atualizarSeletorTomador(){
+  const select=$('#tomador-cadastrado');if(!select)return;
+  const escolhido=select.value;
+  select.replaceChildren();
+  for(const [valor,nome] of [['','Dados do arquivo / preenchimento manual'],...tomadoresCadastrados.map(t=>[String(t.id),`${t.nome} — ${t.documento}`])]){
+    const option=el('option','',nome);option.value=valor;select.append(option);
+  }
+  select.value=escolhido;
+}
+function controlesTomador(detalhe){
+  const barra=el('div','tomador-controls');
+  const select=el('select');select.id='tomador-cadastrado';select.setAttribute('aria-label','Selecionar tomador cadastrado');
+  const salvar=el('button','btn secondary','Cadastrar / atualizar tomador');salvar.type='button';
+  const excluir=el('button','text-btn','Excluir cadastro');excluir.type='button';
+  barra.append(select,salvar,excluir);detalhe.append(barra);atualizarSeletorTomador();
+  select.addEventListener('change',()=>{
+    const cadastro=tomadoresCadastrados.find(t=>String(t.id)===select.value);
+    for(const nome of camposTomador){
+      const campo=detalhe.querySelector(`[name="${nome}"]`);if(!campo)continue;
+      campo.value=(cadastro?.dados || tomadorDoArquivo)[nome]||'';
+      mostrarOrigemCampo(campo.closest('label'),cadastro?{metodo:'tomador cadastrado'}:revisao.dados.origens?.[nome]);
+    }
+    alterado=true;atualizarDadosOrganizados();
+    $('#mensagem-revisao').textContent='Tomador aplicado. Confira os dados e salve a revisão.';
+  });
+  salvar.addEventListener('click',async()=>{
+    const dados=Object.fromEntries(camposTomador.map(nome=>[nome,detalhe.querySelector(`[name="${nome}"]`)?.value||'']));
+    try{
+      await json('/api/tomadores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dados})});
+      tomadoresCadastrados=await json('/api/tomadores');atualizarSeletorTomador();
+      $('#mensagem-revisao').textContent='Tomador cadastrado. Salve a revisão para aplicá-lo a este documento.';
+    }catch(erro){$('#mensagem-revisao').textContent=erro.message;}
+  });
+  excluir.addEventListener('click',async()=>{
+    const id=select.value;if(!id)return;
+    try{await json(`/api/tomadores/${id}`,{method:'DELETE'});tomadoresCadastrados=await json('/api/tomadores');atualizarSeletorTomador();
+      $('#mensagem-revisao').textContent='Cadastro excluído. Os dados deste documento continuam na revisão.';
+    }catch(erro){$('#mensagem-revisao').textContent=erro.message;}
+  });
+}
 function renderizarCampos(dados){
   const area=$('#campos-revisao');area.replaceChildren();const grupos=new Map();
   for(const [campo,titulo] of definicoes){
     const nomeGrupo=grupo(campo);
-    if(!grupos.has(nomeGrupo)){const detalhe=el('details','field-group');detalhe.open=['Identificação da nota','Valores e tributos'].includes(nomeGrupo);detalhe.append(el('summary','',nomeGrupo));const grid=el('div','fields-grid');detalhe.append(grid);area.append(detalhe);grupos.set(nomeGrupo,grid);}
+    if(!grupos.has(nomeGrupo)){const detalhe=el('details','field-group');detalhe.open=['Identificação da nota','Valores e tributos'].includes(nomeGrupo);detalhe.append(el('summary','',nomeGrupo));if(nomeGrupo==='Tomador')controlesTomador(detalhe);const grid=el('div','fields-grid');detalhe.append(grid);area.append(detalhe);grupos.set(nomeGrupo,grid);}
     const longo=['descricao_servico','discriminacao_servicos'].includes(campo),label=el('label','field'+(longo?' full':''));label.append(el('span','',titulo));
-    const opcoes=campo==='iss_retido'?[['','Não informado'],['sim','Sim'],['nao','Não']]:campo==='incentivo_fiscal_xml'?[['','Não informado'],['1','1 — Sim'],['2','2 — Não']]:null;
+    const opcoes=campo==='iss_retido'?[['nao','Não'],['sim','Sim']]:campo==='incentivo_fiscal_xml'?[['','Não informado'],['1','1 — Sim'],['2','2 — Não']]:null;
     const input=el(opcoes?'select':longo?'textarea':'input');
     if(opcoes)for(const [value,texto] of opcoes){const option=el('option','',texto);option.value=value;input.append(option);}
     else if(longo){input.rows=4;input.maxLength=10000;}
     else{input.type='text';input.maxLength=300;}
     input.name=campo;
-    const valor=dados[campo];input.value=valor==null?'':campo.endsWith('_centavos')?(valor/100).toFixed(2).replace('.',','):String(valor);
+    const valor=dados[campo];input.value=valor==null?(campo==='iss_retido'?'nao':''):campo.endsWith('_centavos')?(valor/100).toFixed(2).replace('.',','):String(valor);
     if(campo.endsWith('_centavos')||campo==='aliquota_percentual')input.inputMode='decimal';
     label.append(input);
     mostrarOrigemCampo(label,dados.origens?.[campo]);
@@ -257,6 +300,7 @@ async function abrirRevisao(id,atualizacao=false){
   const resultado=await json(`/api/documentos/${id}/revisao`);
   if(atualizacao && (!revisao || revisao.id!==id || alterado || !$('#revisao-dialog').open))return;
   revisao=resultado;alterado=false;
+  tomadorDoArquivo=Object.fromEntries(camposTomador.map(nome=>[nome,resultado.dados[nome]||'']));
   $('#titulo-revisao').textContent=resultado.nome_arquivo;
   $('#preview-pdf').src=`/visualizar.html?id=${id}`;
   $('#abrir-pdf').href=`/api/documentos/${id}/pdf`;
@@ -274,7 +318,9 @@ async function abrirRevisao(id,atualizacao=false){
   $('#tentar-leitura').hidden=processando||!!resultado.dados.revisado_em;
   $('#preencher-texto').disabled=processando||!resultado.texto_extraido;
   $('#mensagem-revisao').textContent='';renderizarCampos(resultado.dados);atualizarDadosOrganizados();trocarAba(false);
+  json('/api/tomadores').then(lista=>{tomadoresCadastrados=lista;if(revisao?.id===id)atualizarSeletorTomador();}).catch(()=>{});
   for(const campo of $('#campos-revisao').querySelectorAll('input,select,textarea'))campo.disabled=processando||resultado.status==='conferido';
+  for(const botao of $('#campos-revisao .tomador-controls').querySelectorAll('button'))botao.disabled=processando||resultado.status==='conferido';
   if(!$('#revisao-dialog').open)$('#revisao-dialog').showModal();
   json(`/api/documentos/${id}/historico`).then(eventos=>{
     if(revisao?.id!==id)return;

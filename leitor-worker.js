@@ -17,7 +17,7 @@ process.on('message', async ({caminho}) => {
     }
     let posicional,documento;
     const textoNativo=resultado.pages.map(p=>p.text).join('\n');
-    const conhecido=/PREFEITURA MUNICIPAL DE (?:BARUERI|SANTOS)|DANFSe\s+v2|Notas fiscais gerenciadas pela Qive/i.test(textoNativo);
+    const conhecido=/PREFEITURA MUNICIPAL DE (?:BARUERI|SANTOS)|Prefeitura da Estância Hidromineral de Poá|DANFSe\s+v2|Notas fiscais gerenciadas pela Qive/i.test(textoNativo);
     // O modelo de posições é montado para todos os PDFs. Adaptadores conhecidos
     // continuam responsáveis pelo valor; a posição pode confirmar sua origem.
     {
@@ -33,7 +33,7 @@ process.on('message', async ({caminho}) => {
     let usouOcr=false, paginasOcr=0,ocrComPosicoes=false;
     for (let i=0;i<resultado.pages.length;i++) {
       let texto=resultado.pages[i].text.trim();
-      const campos={...extrairGenerico(texto).dados,...extracao?.dados};
+      const campos={...extrairGenerico(texto).dados,...require('./extrator-poa').extrairPoa(texto),...extracao?.dados};
       for(const [campo,origem] of Object.entries(posicional?.origens||{}))if(origem.pagina===i+1)campos[campo]=posicional.dados[campo];
       const temDados=['numero_nota','cnpj_prestador','cnpj_tomador','valor_servicos_centavos'].some(c=>campos[c]!=null);
       if(texto.replace(/\s/g,'').length<40 || !temDados) {

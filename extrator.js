@@ -170,8 +170,10 @@ function extrairCampos(textoOriginal) {
       const itens = valores[1].match(/[\d.]+,\d{2}/g);
 
       dados.valor_servicos_centavos = centavos(itens[0]);
-      dados.aliquota_percentual = Number(itens[6].replace(",", "."));
-      dados.valor_iss_centavos = centavos(itens[7]);
+      // O texto da tabela vem em ordem distinta da leitura visual: o último
+      // zero pertence às retenções, antes dele estão base, alíquota e ISSQN.
+      dados.aliquota_percentual = Number(itens[5].replace(",", "."));
+      dados.valor_iss_centavos = centavos(itens[6]);
     }
 
     const novosTributos = texto.match(

@@ -144,6 +144,9 @@ iframe{width:100%;flex:1;border:0}
 .field-group{border:1px solid var(--line);border-radius:8px;margin:14px 0;overflow:hidden}
 .field-group summary{cursor:pointer;font-size:12px;font-weight:600;padding:15px;background:#f8fafc}
 .fields-grid{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:15px}
+.tomador-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px 0}
+.tomador-controls select{min-width:220px;flex:1;padding:9px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
+.tomador-controls .btn{font-size:11px;padding:9px 12px}
 .field{font-size:10px;color:#708698;display:flex;flex-direction:column;gap:6px;min-width:0}
 .field input,.field textarea,.field select{width:100%;border:1px solid #dce4eb;border-radius:5px;color:var(--ink);background:#fff;padding:9px;font-size:12px}
 .field.full{grid-column:1/-1}

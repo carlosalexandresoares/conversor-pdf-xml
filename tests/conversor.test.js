@@ -22,6 +22,32 @@ test('Extração conservadora não escolhe números conflitantes nem presume val
  assert.ok(gerarXml({cnpj_tomador:'12345678909',nome_tomador:'A & B <C>',valor_servicos_centavos:0}).includes('<Cpf>12345678909</Cpf>'));
  assert.ok(gerarXml({nome_tomador:'A & B <C>'}).includes('A &amp; B &lt;C&gt;'));
 });
+test('Santos mantém base, alíquota e ISS na ordem visual da tabela',()=>{
+ const texto=`PREFEITURA MUNICIPAL DE SANTOS\nValor do Serviço\nDesconto Incondicionado\nDesconto Condicionado\nOutras Retenções\nDeduções Previstas em Lei\nBase de Cálculo\nAlíquota\nISSQN\n2.036,18\n0,00\n0,00\n0,00\n2.036,18\n5,00\n101,81\n0,00`;
+ const d=interpretar(texto);
+ assert.equal(d.base_calculo_centavos,203618);
+ assert.equal(d.aliquota_percentual,5);
+ assert.equal(d.valor_iss_centavos,10181);
+});
+test('Poá separa os tributos e as pessoas do documento',()=>{
+ const texto=`Prefeitura da Estância Hidromineral de Poá\n5.341/NFE\n21/10/2026 11:49:34\nDA1829E36B86429001BE\nCNPJ : 32.031.707/0001-51\nRazão Social CERTSIM CERTIFICAÇÃO DIGITAL LTDA\nTomador/Adquirente da Operação\nCNPJ : 60.852.977/0001-69\nRazão Social: CRISTALERIA RUVOLO LTDA\nMunicípio ITAQUAQUECETUBA - SP\nVALOR TOTAL DA NOTA = R$ 171,90\n1,50 0,00 0,00 0,90 CBS\n0,17 0,00 0,00 0,10 IBS UF\n5,65\nValor do ISSQN (R$)\n3,29\nAlíquota ISSQN (%)\nBase de Cálculo (R$)\n171,90\nDesconto Incondicional (R$)\nNAO\nOutras Informações`;
+ const d=interpretar(texto);
+ assert.equal(d.modelo,'poa');assert.equal(d.numero_nota,'5341');
+ assert.equal(d.cnpj_tomador,'60852977000169');assert.equal(d.base_calculo_centavos,17190);
+ assert.equal(d.aliquota_percentual,3.29);assert.equal(d.valor_iss_centavos,565);
+ assert.equal(d.valor_cbs_centavos,150);assert.equal(d.valor_ibs_centavos,17);
+ assert.equal(d.iss_retido,'nao');
+});
+test('Cadastro de tomador pode ser selecionado sem alterar o PDF',async()=>{
+ const dados={cnpj_tomador:'60.852.977/0001-69',nome_tomador:'CRISTALERIA RUVOLO LTDA',tomador_endereco:'RUA JIHEI OTSUBO',tomador_numero:'252',tomador_cep:'08580-290',tomador_municipio:'ITAQUAQUECETUBA',tomador_uf:'SP'};
+ const resposta=await fetch(base+'/api/tomadores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dados})});
+ assert.equal(resposta.status,200);
+ const lista=await(await fetch(base+'/api/tomadores')).json();
+ const item=lista.find(x=>x.documento==='60852977000169');
+ assert.equal(item.dados.tomador_cep,'08580290');assert.equal(item.dados.tomador_numero,'252');
+ assert.equal((await fetch(base+`/api/tomadores/${item.id}`,{method:'DELETE'})).status,200);
+ assert.ok(!(await(await fetch(base+'/api/tomadores')).json()).some(x=>x.id===item.id));
+});
 test('NFS-e de outro município com campos lado a lado e cidade/UF',()=>{
  const d=interpretar('Prefeitura de Curitiba\nNúmero da NFS-e: 827\nData e Hora de Emissão: 13/10/2026 09:30\nEMITENTE DA NFS-e\nCNPJ: 12.345.678/0001-90  Razão Social: Empresa Exemplo\nMunicípio: Curitiba / PR\nTOMADOR DO SERVIÇO\nCPF: 123.456.789-09  Nome: Cliente Exemplo\nMunicípio: São Paulo - SP\nValor dos Serviços: 1.234,56  Valor Líquido: 1.200,00');
  assert.equal(d.numero_nota,'827');assert.equal(d.data_emissao,'2026-10-13T09:30:00');

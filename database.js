@@ -61,6 +61,13 @@ db.exec(`
     criado_em TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
   CREATE INDEX IF NOT EXISTS idx_eventos_documento ON eventos_documento(documento_id, id);
+  CREATE TABLE IF NOT EXISTS tomadores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    documento TEXT NOT NULL UNIQUE,
+    nome TEXT NOT NULL,
+    dados_json TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
 `);
 
 // Additive migration: preserves existing PDFs, records and manual revisions.

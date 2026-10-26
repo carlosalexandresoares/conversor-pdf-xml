@@ -225,7 +225,7 @@ function extrairDadosFiscais(textoOriginal) {
 
     if (valores) {
       const itens = valores[1].match(/[\d.]+,\d{2}/g);
-      dados.base_calculo_centavos = centavos(itens[5]);
+      dados.base_calculo_centavos = centavos(itens[4]);
     }
 
     // Os valores dos municípios aparecem antes dos títulos.

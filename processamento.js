@@ -7,6 +7,7 @@ const {extrairComplementos}=require('./extrator-complementos');
 const {extrairGenerico}=require('./extrator-generico');
 const {extrairDanfse}=require('./extrator-danfse');
 const {extrairQive}=require('./extrator-qive');
+const {extrairPoa}=require('./extrator-poa');
 const {preencherCodigosMunicipios}=require('./municipios');
 const {atualizarAvisosValidacao}=require('./validacao-extracao');
 const pastaUploads=process.env.CONVERSOR_UPLOAD_DIR || path.join(__dirname,'uploads');
@@ -37,6 +38,16 @@ function lerPdf(caminho) {
 }
 // Combina o resultado do leitor com adaptadores conhecidos e códigos municipais.
 function interpretar(texto,extracao) {
+  const poa=extrairPoa(texto);
+  if(poa){
+    const generico=extrairGenerico(texto);
+    const dados={...generico.dados};
+    const origens={...generico.origens};
+    for(const [campo,valor] of Object.entries(poa))if(valor!=null){dados[campo]=valor;origens[campo]={metodo:'layout poa'};}
+    dados.origens=origens;dados.avisos=generico.avisos;
+    preencherCodigosMunicipios(dados);atualizarAvisosValidacao(dados);
+    return dados;
+  }
   const qive=extracao||extrairQive(texto);
   if(qive){
     const dados={...qive.dados,origens:qive.origens,avisos:qive.avisos};
